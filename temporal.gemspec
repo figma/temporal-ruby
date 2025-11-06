@@ -17,6 +17,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'base64'
   spec.add_dependency 'grpc'
   spec.add_dependency 'oj'
+  spec.add_dependency 'google-protobuf', '~> 4.33.0'
 
   spec.add_development_dependency 'pry'
   # TODO: Investigate spec failure surfacing in RSpec 3.11
