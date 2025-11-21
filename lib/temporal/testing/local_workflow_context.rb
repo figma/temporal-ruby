@@ -41,7 +41,7 @@ module Temporal
 
       def execute_activity(activity_class, *input, **args)
         options = args.delete(:options) || {}
-        input << args unless args.empty?
+        input << args
 
         event_id = next_event_id
         activity_id = options[:activity_id] || event_id
@@ -97,7 +97,7 @@ module Temporal
 
       def execute_local_activity(activity_class, *input, **args)
         options = args.delete(:options) || {}
-        input << args unless args.empty?
+        input << args
 
         execution_options = ExecutionOptions.new(activity_class, options, config.default_execution_options)
         activity_id = options[:activity_id] || SecureRandom.uuid
@@ -127,7 +127,7 @@ module Temporal
 
       def execute_workflow!(workflow_class, *input, **args)
         options = args.delete(:options) || {}
-        input << args unless args.empty?
+        input << args
 
         execution = WorkflowExecution.new
         workflow_id = SecureRandom.uuid

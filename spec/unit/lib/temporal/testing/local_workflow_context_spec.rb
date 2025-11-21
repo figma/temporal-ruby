@@ -66,6 +66,12 @@ describe Temporal::Testing::LocalWorkflowContext do
     end
   end
 
+  class TestArgsActivity < Temporal::Activity
+    def execute(*input, **args)
+      input.shift.call(input, args)
+    end
+  end
+
   class MetadataCapturingActivity < Temporal::Activity
     def execute
       # activity.metadata is private, which we work around in order to write unit tests that
@@ -131,6 +137,13 @@ describe Temporal::Testing::LocalWorkflowContext do
 
         expect(f.get).to eq(error)
       end
+
+      it 'does not confuse empty hash as kwargs' do
+        workflow_context.execute_activity(TestArgsActivity, proc do |args, kwargs|
+          expect(args.length).to be 1
+          expect(args[0]).to be {}
+        end, {})
+      end
     end
   end
 
@@ -161,6 +174,13 @@ describe Temporal::Testing::LocalWorkflowContext do
       expect(result.workflow_id).to eq(workflow_id)
       expect(result.workflow_name).to eq(workflow_name)
       expect(result.workflow_run_id).to eq(run_id)
+    end
+
+    it 'does not confuse empty hash as kwargs' do
+      workflow_context.execute_activity!(TestArgsActivity, proc do |args, kwargs|
+        expect(args.length).to be 1
+        expect(args[0]).to be {}
+      end, {})
     end
   end
 
