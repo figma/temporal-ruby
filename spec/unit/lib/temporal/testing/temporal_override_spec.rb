@@ -22,6 +22,18 @@ describe Temporal::Testing::TemporalOverride do
     end
   end
 
+  class TemporalOverrideArgsWorkflow < Temporal::Workflow
+    namespace 'default-namespace'
+    task_queue 'default-task-queue'
+
+    attr_reader :args, :kwargs
+
+    def execute(*args, **kwargs)
+      @args = args
+      @kwargs = kwargs
+    end
+  end
+
   context 'when testing mode is disabled' do
     describe 'Temporal.start_workflow' do
       let(:connection) { instance_double('Temporal::Connection::GRPC') }
@@ -110,6 +122,26 @@ describe Temporal::Testing::TemporalOverride do
         TestTemporalOverrideWorkflow.execute_locally
 
         expect(workflow).to have_received(:execute)
+      end
+
+      it 'works with kwargs' do
+        workflow = TemporalOverrideArgsWorkflow.new(nil)
+        allow(TemporalOverrideArgsWorkflow).to receive(:new).and_return(workflow)
+
+        TemporalOverrideArgsWorkflow.execute_locally(1, hello: "world")
+
+        expect(workflow.args).to eql([1])
+        expect(workflow.kwargs).to eql({ hello: "world" })
+      end
+
+      it 'does not confuse last hash as kwargs' do
+        workflow = TemporalOverrideArgsWorkflow.new(nil)
+        allow(TemporalOverrideArgsWorkflow).to receive(:new).and_return(workflow)
+
+        TemporalOverrideArgsWorkflow.execute_locally(1, { hello: "world" })
+
+        expect(workflow.args).to eql([1, { hello: "world" }])
+        expect(workflow.kwargs).to eql({})
       end
 
       it 'restores original context after finishing successfully' do

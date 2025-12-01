@@ -23,7 +23,9 @@ module Temporal
         disabled_releases << release_name.to_s
       end
 
-      def execute_locally(*input)
+      def execute_locally(*input, **args)
+        input << args
+
         workflow_id = SecureRandom.uuid
         run_id = SecureRandom.uuid
         execution = WorkflowExecution.new
