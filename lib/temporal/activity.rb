@@ -1,5 +1,4 @@
 require 'temporal/activity/workflow_convenience_methods'
-require 'temporal/callable'
 require 'temporal/concerns/executable'
 require 'temporal/errors'
 
@@ -10,9 +9,7 @@ module Temporal
 
     def self.execute_in_context(context, input)
       activity = new(context)
-      callable = Temporal::Callable.new(method: activity.method(:execute))
-
-      callable.call(input)
+      activity.execute(*input)
     end
 
     def initialize(context)
