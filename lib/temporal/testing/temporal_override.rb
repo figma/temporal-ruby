@@ -115,8 +115,18 @@ module Temporal
         )
 
         if schedule.nil?
-          execution.run do
-            workflow.execute_in_context(context, input)
+          executor = lambda do
+            execution.run do
+              workflow.execute_in_context(context, input)
+            end
+          end
+
+          if Temporal::Testing.defer_starts?
+            # Defer execution until the surrounding with_deferred_starts block exits,
+            # modeling the async start/run split of a real Temporal server.
+            Temporal::Testing::DeferredStarts::Private::Store.add(executor_lambda: executor)
+          else
+            executor.call
           end
         else
           # Defer execution; in testing mode, it'll need to be invoked manually.
