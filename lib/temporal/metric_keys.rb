@@ -12,5 +12,7 @@ module Temporal
     WORKFLOW_TASK_EXECUTION_FAILED = 'workflow_task.execution_failed'.freeze
 
     THREAD_POOL_AVAILABLE_THREADS = 'thread_pool.available_threads'.freeze
+    WORKER_TASK_SLOTS_AVAILABLE = 'worker_task_slots_available'.freeze
+    WORKER_TASK_SLOTS_USED = 'worker_task_slots_used'.freeze
   end
 end
