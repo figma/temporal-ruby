@@ -1,4 +1,5 @@
 require 'temporal/connection/grpc'
+require 'temporal/retry_policy'
 require 'temporal/converter_wrapper'
 require 'temporal/workflow/query_result'
 
@@ -93,6 +94,7 @@ describe Temporal::Connection::GRPC do
         expect(request.workflow_task_timeout.seconds).to eq(3)
         expect(request.workflow_start_delay.seconds).to eq(10)
         expect(request.workflow_id_reuse_policy).to eq(:WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE)
+        expect(request.retry_policy).to be_nil
         expect(request.search_attributes.indexed_fields).to eq({
           'foo-int-attribute' => Temporalio::Api::Common::V1::Payload.new(data: '256', metadata: { 'encoding' => 'json/plain' }),
           'foo-string-attribute' => Temporalio::Api::Common::V1::Payload.new(data: '"bar"', metadata: { 'encoding' => 'json/plain' }),
@@ -100,6 +102,26 @@ describe Temporal::Connection::GRPC do
           'foo-bool-attribute' => Temporalio::Api::Common::V1::Payload.new(data: 'false', metadata: { 'encoding' => 'json/plain' }),
           'foo-datetime-attribute' => Temporalio::Api::Common::V1::Payload.new(data: "\"#{datetime_attribute_value.utc.iso8601}\"", metadata: { 'encoding' => 'json/plain' }),
         })
+      end
+    end
+
+    it 'sends the retry policy when one is given' do
+      allow(grpc_stub).to receive(:start_workflow_execution).and_return(Temporalio::Api::WorkflowService::V1::StartWorkflowExecutionResponse.new(run_id: 'xxx'))
+
+      subject.start_workflow_execution(
+        namespace: namespace,
+        workflow_id: workflow_id,
+        workflow_name: 'Test',
+        task_queue: 'test',
+        execution_timeout: 0,
+        run_timeout: 0,
+        task_timeout: 0,
+        retry_policy: Temporal::RetryPolicy.new(interval: 5, backoff: 2, max_attempts: 3)
+      )
+
+      expect(grpc_stub).to have_received(:start_workflow_execution) do |request|
+        expect(request.retry_policy.initial_interval.seconds).to eq(5)
+        expect(request.retry_policy.maximum_attempts).to eq(3)
       end
     end
 
@@ -160,6 +182,27 @@ describe Temporal::Connection::GRPC do
         expect(request.signal_name).to eq('the question')
         expect(request.signal_input.payloads[0].data).to eq('"what do you get if you multiply six by nine?"')
         expect(request.workflow_id_reuse_policy).to eq(:WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE)
+        expect(request.retry_policy).to be_nil
+      end
+    end
+
+    it 'sends the retry policy with a signal when one is given' do
+      subject.signal_with_start_workflow_execution(
+        namespace: namespace,
+        workflow_id: workflow_id,
+        workflow_name: 'Test',
+        task_queue: 'test',
+        execution_timeout: 0,
+        run_timeout: 0,
+        task_timeout: 0,
+        signal_name: 'the question',
+        signal_input: nil,
+        retry_policy: Temporal::RetryPolicy.new(interval: 5, backoff: 2, max_attempts: 3)
+      )
+
+      expect(grpc_stub).to have_received(:signal_with_start_workflow_execution) do |request|
+        expect(request.retry_policy.initial_interval.seconds).to eq(5)
+        expect(request.retry_policy.maximum_attempts).to eq(3)
       end
     end
 
@@ -667,7 +710,7 @@ describe Temporal::Connection::GRPC do
     end
 
     before do
-      allow(grpc_stub).to receive(:poll_activity_task_queue).with(anything, return_op: true).and_return(poll_request)
+      allow(grpc_stub).to receive(:poll_activity_task_queue).with(anything, eq({ return_op: true })).and_return(poll_request)
     end
 
     it 'makes an API request' do
@@ -783,7 +826,7 @@ describe Temporal::Connection::GRPC do
           namespace
         )
       end.to raise_error(Temporal::InvalidSearchAttributeTypeFailure) do |e|
-        expect(e.to_s).to eq('Cannot add search attributes ({"SomeBadField"=>:foo}): unknown search attribute type :foo, supported types: [:text, :keyword, :int, :double, :bool, :datetime, :keyword_list]')
+        expect(e.to_s).to eq("Cannot add search attributes (#{ { 'SomeBadField' => :foo }.inspect }): unknown search attribute type :foo, supported types: [:text, :keyword, :int, :double, :bool, :datetime, :keyword_list]")
       end
     end
   end

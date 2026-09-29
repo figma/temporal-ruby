@@ -15,6 +15,7 @@ require 'temporal/connection/serializer/failure'
 require 'temporal/connection/serializer/backfill'
 require 'temporal/connection/serializer/schedule'
 require 'temporal/connection/serializer/workflow_id_reuse_policy'
+require 'temporal/connection/serializer/retry_policy'
 
 module Temporal
   module Connection
@@ -121,7 +122,8 @@ module Temporal
         cron_schedule: nil,
         memo: nil,
         search_attributes: nil,
-        start_delay: nil
+        start_delay: nil,
+        retry_policy: nil
       )
         request = Temporalio::Api::WorkflowService::V1::StartWorkflowExecutionRequest.new(
           identity: identity,
@@ -139,6 +141,7 @@ module Temporal
           workflow_run_timeout: run_timeout,
           workflow_task_timeout: task_timeout,
           workflow_start_delay: start_delay,
+          retry_policy: Temporal::Connection::Serializer::RetryPolicy.new(retry_policy, converter).to_proto,
           request_id: SecureRandom.uuid,
           header: Temporalio::Api::Common::V1::Header.new(
             fields: converter.to_payload_map(headers || {})
@@ -382,7 +385,8 @@ module Temporal
         cron_schedule: nil,
         memo: nil,
         search_attributes: nil,
-        start_delay: nil
+        start_delay: nil,
+        retry_policy: nil
       )
         proto_header_fields = if headers.nil?
                                 converter.to_payload_map({})
@@ -410,6 +414,7 @@ module Temporal
           workflow_run_timeout: run_timeout,
           workflow_task_timeout: task_timeout,
           workflow_start_delay: start_delay,
+          retry_policy: Temporal::Connection::Serializer::RetryPolicy.new(retry_policy, converter).to_proto,
           request_id: SecureRandom.uuid,
           header: Temporalio::Api::Common::V1::Header.new(
             fields: proto_header_fields
