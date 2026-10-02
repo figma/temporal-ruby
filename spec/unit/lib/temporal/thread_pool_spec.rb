@@ -9,6 +9,14 @@ describe Temporal::ThreadPool do
   let(:size) { 2 }
   let(:tags) { { foo: 'bar', bat: 'baz' } }
   let(:thread_pool) { described_class.new(size, config, tags) }
+  let(:worker_metrics_tags) do
+    {
+      namespace: 'test-namespace',
+      task_queue: 'test-task-queue',
+      worker_type: 'ActivityWorker',
+      worker_id: 'worker-1'
+    }
+  end
 
   describe '#new' do
     it 'executes one task on a thread and exits' do
@@ -69,6 +77,58 @@ describe Temporal::ThreadPool do
           instance_of(Integer),
           tags
         )
+        .at_least(:once)
+    end
+
+    it 'periodically reports available and used task slots for an individual worker' do
+      pool = described_class.new(
+        size,
+        config,
+        tags,
+        worker_metrics_tags: worker_metrics_tags,
+        metrics_report_interval_seconds: 0.01
+      )
+
+      sleep 0.02
+      pool.shutdown
+
+      expect(Temporal.metrics)
+        .to have_received(:gauge)
+        .with(Temporal::MetricKeys::WORKER_TASK_SLOTS_AVAILABLE, size, worker_metrics_tags)
+        .at_least(:twice)
+      expect(Temporal.metrics)
+        .to have_received(:gauge)
+        .with(Temporal::MetricKeys::WORKER_TASK_SLOTS_USED, 0, worker_metrics_tags)
+        .at_least(:twice)
+    end
+
+    it 'reports task slot usage while a task is running' do
+      task_started = Queue.new
+      finish_task = Queue.new
+      pool = described_class.new(
+        size,
+        config,
+        tags,
+        worker_metrics_tags: worker_metrics_tags,
+        metrics_report_interval_seconds: 0.01
+      )
+
+      pool.schedule do
+        task_started << true
+        finish_task.pop
+      end
+      task_started.pop
+      sleep 0.02
+      finish_task << true
+      pool.shutdown
+
+      expect(Temporal.metrics)
+        .to have_received(:gauge)
+        .with(Temporal::MetricKeys::WORKER_TASK_SLOTS_AVAILABLE, size - 1, worker_metrics_tags)
+        .at_least(:once)
+      expect(Temporal.metrics)
+        .to have_received(:gauge)
+        .with(Temporal::MetricKeys::WORKER_TASK_SLOTS_USED, 1, worker_metrics_tags)
         .at_least(:once)
     end
   end

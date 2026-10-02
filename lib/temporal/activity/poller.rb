@@ -129,6 +129,14 @@ module Temporal
             pool_name: 'activity_task_poller',
             namespace: namespace,
             task_queue: task_queue
+          },
+          worker_metrics_tags: {
+            namespace: namespace,
+            task_queue: task_queue,
+            worker_type: 'ActivityWorker',
+            # DogStatsD gauges from multiple worker processes otherwise share
+            # one metric context and overwrite each other.
+            worker_id: config.for_connection.identity.to_s.strip
           }
         )
       end
