@@ -322,6 +322,30 @@ To achieve this there are two methods (returning a UUID token) available from yo
 
 Both tokens will remain the same across multiple retry attempts of the activity.
 
+When an Activity error carries a service-provided retry interval, include
+`Temporal::RetryDelay` in that error class and set `next_retry_delay` in seconds
+before raising it. The value must be positive, at least one nanosecond, and may be fractional. For example:
+
+```ruby
+class RateLimited < StandardError
+  include Temporal::RetryDelay
+
+  attr_reader :retry_after_seconds
+end
+
+def execute
+  ExternalService.call
+rescue RateLimited => error
+  error.next_retry_delay = error.retry_after_seconds
+  raise
+end
+```
+
+Only errors that include this module use the override. The retry policy's maximum attempts and
+the Activity's timeouts still limit retries. Use `nil` for no override; zero and other invalid
+delay values raise `ArgumentError` when set. The server versions used by this SDK can treat a zero
+override as a retry timeout.
+
 ### Asynchronous completion
 
 When dealing with asynchronous business logic in your activities, you might need to wait for an

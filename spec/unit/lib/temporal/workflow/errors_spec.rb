@@ -88,6 +88,19 @@ describe Temporal::Workflow::Errors do
 
     end
 
+    it 'retains a retry delay when the original error class is unavailable' do
+      failure = Fabricate(:api_application_failure, message: 'rate limited', backtrace: [],
+                         error_class: 'MissingRateLimitError')
+      failure.application_failure_info.next_retry_delay = Google::Protobuf::Duration.new(seconds: 2, nanos: 300_000_000)
+      allow(Temporal.logger).to receive(:error)
+
+      error = described_class.generate_error(failure, converter)
+
+      expect(error).to be_a(StandardError)
+      expect(error.message).to eq('MissingRateLimitError: rate limited')
+      expect(error.next_retry_delay).to eq(2.3)
+    end
+
 
     it "falls back to StandardError when the client can't initialize the error class due to arity" do
       allow(Temporal.logger).to receive(:error)

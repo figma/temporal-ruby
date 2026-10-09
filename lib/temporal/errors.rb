@@ -1,4 +1,29 @@
 module Temporal
+  # Include this in an exception class to opt in to a per-failure retry delay.
+  # The value is seconds and may be fractional. It only overrides the next
+  # interval; the retry policy's attempt limit and timeouts still apply.
+  module RetryDelay
+    attr_reader :next_retry_delay
+
+    def next_retry_delay=(seconds)
+      unless seconds.nil? || Temporal::RetryDelay.valid_seconds?(seconds)
+        raise ArgumentError, 'next_retry_delay must be a finite number of seconds between 1 nanosecond and 315576000000 seconds'
+      end
+
+      @next_retry_delay = seconds
+    end
+
+    def self.valid_seconds?(seconds)
+      seconds.is_a?(Numeric) && seconds.real? && seconds.finite? &&
+        seconds.to_r >= Rational(1, 1_000_000_000) && seconds <= 315_576_000_000
+    end
+
+    def self.restore(error, seconds)
+      error.extend(self) unless error.is_a?(self)
+      error.instance_variable_set(:@next_retry_delay, seconds)
+    end
+  end
+
   # Superclass for all Temporal errors
   class Error < StandardError; end
 

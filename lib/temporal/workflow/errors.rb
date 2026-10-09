@@ -50,6 +50,12 @@ module Temporal
             )
           end
           exception.tap do |exception|
+            retry_delay = failure.application_failure_info.next_retry_delay
+            if retry_delay
+              # Older failures may carry zero; preserve their metadata without applying outbound validation.
+              Temporal::RetryDelay.restore(exception,
+                                           retry_delay.seconds + retry_delay.nanos.quo(1_000_000_000).to_f)
+            end
             backtrace = failure.stack_trace.split("\n")
             exception.set_backtrace(backtrace) if !backtrace.empty?
           end
