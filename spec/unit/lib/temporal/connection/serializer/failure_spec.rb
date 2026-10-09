@@ -106,5 +106,54 @@ describe Temporal::Connection::Serializer::Failure do
       expect(failure_proto.application_failure_info.type).to eq('MyArglessError')
     end
 
+    class DelayedError < StandardError
+      include Temporal::RetryDelay
+    end
+
+    [false, true].each do |serialize_whole_error|
+      it "preserves a fractional retry delay and error details with v2=#{serialize_whole_error}" do
+        error = DelayedError.new('rate limited')
+        error.next_retry_delay = 1.23
+        failure = described_class.new(error, converter, serialize_whole_error: serialize_whole_error).to_proto
+
+        expect(failure.application_failure_info.type).to eq('DelayedError')
+        expect(failure.application_failure_info.next_retry_delay.seconds).to eq(1)
+        expect(failure.application_failure_info.next_retry_delay.nanos).to eq(230_000_000)
+        restored = Temporal::Workflow::Errors.generate_error(failure, converter)
+        expect(restored).to be_a(DelayedError)
+        expect(restored.message).to eq('rate limited')
+        expect(restored.next_retry_delay).to eq(1.23)
+      end
+    end
+
+    it 'preserves an inbound zero delay without emitting one by default' do
+      failure = described_class.new(DelayedError.new('old failure'), converter).to_proto
+      failure.application_failure_info.next_retry_delay = Google::Protobuf::Duration.new
+
+      expect(failure.application_failure_info.next_retry_delay).to eq(Google::Protobuf::Duration.new)
+      restored = Temporal::Workflow::Errors.generate_error(failure, converter)
+      expect(restored.next_retry_delay).to eq(0)
+      expect(described_class.new(restored, converter).to_proto.application_failure_info.next_retry_delay).to be_nil
+      expect(described_class.new(StandardError.new('ordinary'), converter).to_proto.application_failure_info.next_retry_delay)
+        .to be_nil
+    end
+
+    it 'does not infer an override from similarly named fields on ordinary errors' do
+      error = StandardError.new('rate limited')
+      error.define_singleton_method(:retry_after_seconds) { 5 }
+      error.define_singleton_method(:next_retry_delay) { 5 }
+
+      expect(described_class.new(error, converter).to_proto.application_failure_info.next_retry_delay).to be_nil
+    end
+
+    it 'rejects invalid delay values before an error can be raised' do
+      error = DelayedError.new('invalid')
+      [-1, 0, 0.5e-9, Float::INFINITY, Float::NAN, '1.5', Complex(1, 2), 315_576_000_001].each do |value|
+        expect { error.next_retry_delay = value }.to raise_error(ArgumentError)
+      end
+      error.next_retry_delay = 1e-9
+      expect(described_class.new(error, converter).to_proto.application_failure_info.next_retry_delay.nanos).to eq(1)
+    end
+
   end
 end

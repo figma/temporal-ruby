@@ -1,4 +1,8 @@
 module Temporal
+  module RetryDelay
+    def next_retry_delay; end
+    def next_retry_delay=(seconds); end
+  end
   class Activity; end
   class ActivityException; end
   module Client
