@@ -15,6 +15,7 @@ require 'temporal/connection/serializer/failure'
 require 'temporal/connection/serializer/backfill'
 require 'temporal/connection/serializer/schedule'
 require 'temporal/connection/serializer/workflow_id_reuse_policy'
+require 'temporal/connection/serializer/workflow_id_conflict_policy'
 require 'temporal/connection/serializer/retry_policy'
 
 module Temporal
@@ -118,6 +119,7 @@ module Temporal
         task_timeout:,
         input: nil,
         workflow_id_reuse_policy: nil,
+        workflow_id_conflict_policy: nil,
         headers: nil,
         cron_schedule: nil,
         memo: nil,
@@ -125,6 +127,11 @@ module Temporal
         start_delay: nil,
         retry_policy: nil
       )
+        if !workflow_id_conflict_policy.nil? && workflow_id_reuse_policy == :terminate_if_running
+          raise Temporal::Connection::ArgumentError,
+            'workflow_id_conflict_policy cannot be combined with workflow_id_reuse_policy :terminate_if_running'
+        end
+
         request = Temporalio::Api::WorkflowService::V1::StartWorkflowExecutionRequest.new(
           identity: identity,
           namespace: namespace,
@@ -133,6 +140,7 @@ module Temporal
           ),
           workflow_id: workflow_id,
           workflow_id_reuse_policy: Temporal::Connection::Serializer::WorkflowIdReusePolicy.new(workflow_id_reuse_policy, converter).to_proto,
+          workflow_id_conflict_policy: Temporal::Connection::Serializer::WorkflowIdConflictPolicy.new(workflow_id_conflict_policy, converter).to_proto,
           task_queue: Temporalio::Api::TaskQueue::V1::TaskQueue.new(
             name: task_queue
           ),
