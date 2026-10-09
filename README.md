@@ -413,6 +413,19 @@ workflows by supplying the `workflow_id_reuse_policy:` argument with one of thes
 - `:allow` will allow re-running any finished workflows both failed and completed
 - `:reject` will reject any subsequent attempt to run a workflow
 
+For an **already running** workflow, `Temporal.start_workflow` can instead return its existing run ID:
+
+```ruby
+run_id = Temporal.start_workflow(RenewSubscriptionWorkflow, user_id,
+  options: { workflow_id: user_id, workflow_id_conflict_policy: :use_existing })
+```
+
+This is opt-in. The existing workflow keeps its original input; arguments in the second start call
+are not delivered to it. The default remains to raise `Temporal::WorkflowExecutionAlreadyStartedFailure`.
+The separate `workflow_id_reuse_policy` controls what happens after the prior run closes.
+`workflow_id_conflict_policy` is supported only for ordinary `start_workflow` calls, not
+signal-with-start, `schedule_workflow`, or `Temporal::Testing.local!`.
+
 
 ## Execution Options
 
