@@ -17,10 +17,12 @@ require 'temporal/connection/serializer/schedule'
 require 'temporal/connection/serializer/workflow_id_reuse_policy'
 require 'temporal/connection/serializer/workflow_id_conflict_policy'
 require 'temporal/connection/serializer/retry_policy'
+require 'temporal/connection/workflow_updates'
 
 module Temporal
   module Connection
     class GRPC
+      include WorkflowUpdates
       HISTORY_EVENT_FILTER = {
         all: Temporalio::Api::Enums::V1::HistoryEventFilterType::HISTORY_EVENT_FILTER_TYPE_ALL_EVENT,
         close: Temporalio::Api::Enums::V1::HistoryEventFilterType::HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT
@@ -109,7 +111,7 @@ module Temporal
         client.deprecate_namespace(request)
       end
 
-      def start_workflow_execution(
+      def build_start_workflow_execution_request(
         namespace:,
         workflow_id:,
         workflow_name:,
@@ -125,7 +127,8 @@ module Temporal
         memo: nil,
         search_attributes: nil,
         start_delay: nil,
-        retry_policy: nil
+        retry_policy: nil,
+        request_id: SecureRandom.uuid
       )
         if !workflow_id_conflict_policy.nil? && workflow_id_reuse_policy == :terminate_if_running
           raise Temporal::Connection::ArgumentError,
@@ -150,7 +153,7 @@ module Temporal
           workflow_task_timeout: task_timeout,
           workflow_start_delay: start_delay,
           retry_policy: Temporal::Connection::Serializer::RetryPolicy.new(retry_policy, converter).to_proto,
-          request_id: SecureRandom.uuid,
+          request_id: request_id,
           header: Temporalio::Api::Common::V1::Header.new(
             fields: converter.to_payload_map(headers || {})
           ),
@@ -163,7 +166,12 @@ module Temporal
           )
         )
 
-        client.start_workflow_execution(request)
+        request
+      end
+      private :build_start_workflow_execution_request
+
+      def start_workflow_execution(**options)
+        client.start_workflow_execution(build_start_workflow_execution_request(**options))
       rescue ::GRPC::AlreadyExists => e
         # Feel like there should be cleaner way to do this...
         run_id = e.details[/RunId: ([a-f0-9]+-[a-f0-9]+-[a-f0-9]+-[a-f0-9]+-[a-f0-9]+)/, 1]
@@ -236,12 +244,13 @@ module Temporal
         client.respond_query_task_completed(request)
       end
 
-      def respond_workflow_task_completed(namespace:, task_token:, commands:, binary_checksum:, new_sdk_flags_used:, query_results: {})
+      def respond_workflow_task_completed(namespace:, task_token:, commands:, binary_checksum:, new_sdk_flags_used:, query_results: {}, messages: [])
         request = Temporalio::Api::WorkflowService::V1::RespondWorkflowTaskCompletedRequest.new(
           namespace: namespace,
           identity: identity,
           task_token: task_token,
           commands: Array(commands).map { |(_, command)| Serializer.serialize(command, converter) },
+          messages: messages,
           query_results: query_results.transform_values { |value| Serializer.serialize(value, converter) },
           binary_checksum: binary_checksum,
           sdk_metadata: if new_sdk_flags_used.any?

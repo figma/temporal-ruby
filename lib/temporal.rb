@@ -16,6 +16,11 @@ module Temporal
 
   def_delegators :default_client, #target
                  :start_workflow,
+                 :start_workflow_update,
+                 :execute_workflow_update,
+                 :start_update_with_start_workflow,
+                 :execute_update_with_start_workflow,
+                 :get_workflow_update_handle,
                  :schedule_workflow,
                  :register_namespace,
                  :describe_namespace,

@@ -423,9 +423,136 @@ run_id = Temporal.start_workflow(RenewSubscriptionWorkflow, user_id,
 This is opt-in. The existing workflow keeps its original input; arguments in the second start call
 are not delivered to it. The default remains to raise `Temporal::WorkflowExecutionAlreadyStartedFailure`.
 The separate `workflow_id_reuse_policy` controls what happens after the prior run closes.
-`workflow_id_conflict_policy` is supported only for ordinary `start_workflow` calls, not
-signal-with-start, `schedule_workflow`, or `Temporal::Testing.local!`.
+`workflow_id_conflict_policy` is supported for ordinary `start_workflow` calls and the
+Update-With-Start APIs below, not signal-with-start, `schedule_workflow`, or
+`Temporal::Testing.local!`.
 
+
+
+## Workflow Updates and Update-With-Start
+
+Updates are requests with a durable result. A handler can validate a request, change workflow state,
+await Activities or timers, and return a value or an error to its caller. Unlike a query, an accepted
+Update is recorded in history and is replayed after a worker restart. Unlike a signal, it has a result.
+This implementation is tested against **Temporal Server 1.32.0**. Deploy workers with Update support
+before enabling clients that send Updates to their task queues.
+
+Register handlers synchronously in `execute`, before its first blocking operation. Update arguments
+are positional, just like workflow and Activity arguments. A validator raises to reject a request;
+its return value is ignored. Validators must be deterministic, synchronous and read-only: no state
+mutation, I/O, Activities, timers, Future callbacks, side effects or blocking. Validators are **not** run again when
+replaying an already accepted Update.
+
+```ruby
+class BillingCoordinator < Temporal::Workflow
+  def execute(account_id)
+    busy = false
+    stopped = false
+
+    workflow.on_update('cancel_invoice', validator: ->(invoice_id) {
+      raise ArgumentError, 'invoice ID required' if invoice_id.to_s.empty?
+    }) do |invoice_id|
+      # Handlers interleave whenever they await an Activity/timer/condition.
+      # Serialize operations that must observe and modify consistent shared state.
+      workflow.wait_until { !busy }
+      busy = true
+      begin
+        # The Activity must make its external operation idempotent. A stable
+        # business operation ID can be passed to the external system as its key.
+        CancelInvoiceActivity.execute!(account_id, invoice_id, workflow.current_update[:id])
+      ensure
+        busy = false
+      end
+    end
+
+    workflow.on_signal('stop') { stopped = true }
+    workflow.wait_until { stopped }
+    workflow.wait_until { workflow.all_update_handlers_finished? }
+  end
+end
+
+result = Temporal.execute_update_with_start_workflow(
+  BillingCoordinator, 'cancel_invoice', 'invoice-123',
+  start_args: ['account-456'],
+  options: { workflow_id: 'billing-account-456', task_queue: 'billing',
+             workflow_id_reuse_policy: :allow },
+  workflow_id_conflict_policy: :use_existing,
+  update_id: 'cancel-request-789',
+  request_id: 'start-request-789',
+  timeout: 60
+)
+```
+
+This uses the server's atomic `ExecuteMultiOperation` (Start + Update) API. If no run exists, the
+server starts one and delivers the Update. For a running workflow, the required conflict policy is
+`:use_existing` or `:fail`. The existing `workflow_id_reuse_policy` controls closed workflows
+(`:allow`, `:allow_failed`, or `:reject`). Start arguments/options are only applied when starting a
+new run. Cron schedules, start delays and Signal-With-Start options cannot be combined with this API.
+A validator rejection does **not** undo a workflow that was started by Update-With-Start.
+
+To return after durable acceptance and wait for the result later:
+
+```ruby
+handle = Temporal.start_update_with_start_workflow(
+  BillingCoordinator, 'cancel_invoice', 'invoice-123',
+  start_args: ['account-456'], options: { workflow_id: 'billing-account-456' },
+  workflow_id_conflict_policy: :use_existing, update_id: 'cancel-request-789',
+  wait_for_stage: :accepted # :completed is also supported
+)
+result = handle.result(timeout: 60)
+
+# Save all four fields before exiting the client process:
+# handle.namespace, handle.workflow_id, handle.run_id, handle.update_id
+saved = Temporal.get_workflow_update_handle(
+  handle.workflow_id, handle.run_id, handle.update_id, namespace: handle.namespace
+)
+result = saved.result(timeout: 60)
+
+# Update an already running execution, with no start operation:
+result = Temporal.execute_workflow_update(
+  BillingCoordinator, 'cancel_invoice', handle.workflow_id, handle.run_id, 'invoice-124',
+  update_id: 'cancel-request-790', timeout: 60
+)
+# start_workflow_update has the same arguments and returns an accepted handle.
+```
+
+`WorkflowUpdateFailed` represents a validator rejection or handler exception; `cause` is the
+converted application error. Handler errors fail the Update, leaving the Workflow running. RPC
+failures remain gRPC errors; expiration of the overall wait budget raises `Temporal::TimeoutError`.
+A timeout does not cancel the Update. Reuse both IDs after an ambiguous Update-With-Start failure,
+or retrieve the handle by the saved run ID. The SDK retains request IDs across its internal retries.
+`workflow_started` on a handle reflects the first successful server start response; after a lost
+response it cannot establish which caller originally created the run.
+
+Update IDs deduplicate **within one Workflow run**, not across new runs or reset branches. They do
+not provide exactly-once external effects: handlers replay, Activities retry, and resets can reapply
+Updates. Use idempotent Activities and stable business keys at the external boundary. Validators and
+handlers must follow the same determinism/versioning rules as the rest of the Workflow. Update
+headers use the configured converter and header propagators; a handler can read decoded headers
+from `workflow.current_update[:headers]` and its ID/name from `:id`/`:name`.
+
+Normal workflow completion waits for accepted handlers to finish. Before continuing as new,
+explicitly wait for `workflow.all_update_handlers_finished?`; a handler cannot complete, fail, or
+continue the Workflow itself. Future `done`/`failed` callbacks registered inside an Update inherit
+that Update's context and restrictions, even if another part of the workflow created the Future.
+The Update waits for these callbacks as well as the handler to finish. A callback exception is
+delivered to the suspended handler's rescue/ensure blocks, or fails the Update if the handler has
+already returned. Other owned callbacks still finish before the outcome is sent. Do not make a
+callback wait for its own Update to complete. External termination/timeouts can still interrupt
+in-flight Updates.
+The local `Temporal::Testing.local!` simulator does not implement Updates and raises rather than
+sending these requests to a server. Use the integration suite with an isolated Temporal test server:
+
+```sh
+temporal server start-dev --headless --ip 127.0.0.1 --port 17233
+TEMPORAL_UPDATE_INTEGRATION=1 TEMPORAL_UPDATE_PORT=17233 \
+  bundle exec rspec spec/integration/update_with_start_spec.rb
+```
+
+The generated protobuf additions are a narrow backport of the Update/ExecuteMultiOperation surface
+from [Temporal API v1.44.0](https://github.com/temporalio/api/tree/v1.44.0/temporal/api).
+`make proto` applies `scripts/backport_workflow_updates.rb` after ordinary generation; the script can
+also be run directly and is idempotent. Other API definitions and the proto submodule pin are retained.
 
 ## Execution Options
 

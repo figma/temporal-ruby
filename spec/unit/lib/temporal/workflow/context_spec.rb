@@ -18,7 +18,8 @@ class MyTestActivity < Temporal::Activity
 end
 
 describe Temporal::Workflow::Context do
-  let(:state_manager) { instance_double('Temporal::Workflow::StateManager') }
+  let(:state_manager) { instance_double('Temporal::Workflow::StateManager', update_registry: update_registry) }
+  let(:update_registry) { instance_double(Temporal::Workflow::UpdateRegistry, validating?: false, registered?: false, active_count: 0) }
   let(:dispatcher) { Temporal::Workflow::Dispatcher.new }
   let(:query_registry) do
     double = instance_double('Temporal::Workflow::QueryRegistry')
