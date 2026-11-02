@@ -1,3 +1,4 @@
+require 'temporal/connection/serializer/protocol_message'
 require 'temporal/workflow/command'
 require 'temporal/workflow/query_result'
 require 'temporal/connection/serializer/schedule_activity'
@@ -18,6 +19,7 @@ module Temporal
   module Connection
     module Serializer
       SERIALIZERS_MAP = {
+        Workflow::Command::ProtocolMessage => Serializer::ProtocolMessage,
         Workflow::Command::ScheduleActivity => Serializer::ScheduleActivity,
         Workflow::Command::StartChildWorkflow => Serializer::StartChildWorkflow,
         Workflow::Command::RequestActivityCancellation => Serializer::RequestActivityCancellation,

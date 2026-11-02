@@ -40,4 +40,6 @@ module Temporal
   class NamespaceAlreadyExistsFailure; end
   class CancellationAlreadyRequestedFailure; end
   class QueryFailed; end
+  class WorkflowUpdateFailed; end
+  class WorkflowUpdateHandle; end
 end

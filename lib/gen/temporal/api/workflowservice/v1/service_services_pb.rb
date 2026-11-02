@@ -303,6 +303,7 @@ module Temporalio
             # Invokes the specified update function on user workflow code.
             # (-- api-linter: core::0134=disabled
             #     aip.dev/not-precedent: UpdateWorkflowExecution doesn't follow Google API format --)
+            rpc :ExecuteMultiOperation, ::Temporalio::Api::WorkflowService::V1::ExecuteMultiOperationRequest, ::Temporalio::Api::WorkflowService::V1::ExecuteMultiOperationResponse
             rpc :UpdateWorkflowExecution, ::Temporalio::Api::WorkflowService::V1::UpdateWorkflowExecutionRequest, ::Temporalio::Api::WorkflowService::V1::UpdateWorkflowExecutionResponse
             # Polls a workflow execution for the outcome of a workflow execution update
             # previously issued through the UpdateWorkflowExecution RPC. The effective

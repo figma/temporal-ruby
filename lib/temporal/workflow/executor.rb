@@ -11,7 +11,7 @@ require 'temporal/metadata'
 module Temporal
   class Workflow
     class Executor
-      RunResult = Struct.new(:commands, :new_sdk_flags_used, keyword_init: true)
+      RunResult = Struct.new(:commands, :new_sdk_flags_used, :messages, keyword_init: true)
 
       # @param workflow_class [Class]
       # @param history [Workflow::History]
@@ -40,9 +40,10 @@ module Temporal
 
         while window = history.next_window
           state_manager.apply(window)
+          @context&.flush_update_completion
         end
 
-        RunResult.new(commands: state_manager.final_commands, new_sdk_flags_used: state_manager.new_sdk_flags_used)
+        RunResult.new(commands: state_manager.final_commands, new_sdk_flags_used: state_manager.new_sdk_flags_used, messages: state_manager.final_messages)
       end
 
       # Process queries using the pre-registered query handlers
@@ -72,7 +73,7 @@ module Temporal
 
       def execute_workflow(input, workflow_started_event)
         metadata = Metadata.generate_workflow_metadata(workflow_started_event, task_metadata, config.converter)
-        context = Workflow::Context.new(state_manager, dispatcher, workflow_class, metadata, config, query_registry,
+        context = @context = Workflow::Context.new(state_manager, dispatcher, workflow_class, metadata, config, query_registry,
                                         track_stack_trace)
 
         Fiber.new do

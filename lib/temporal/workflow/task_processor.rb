@@ -113,7 +113,7 @@ module Temporal
           next_page_token = response.next_page_token
         end
 
-        Workflow::History.new(events)
+        Workflow::History.new(events, **(task.messages.empty? ? {} : { messages: task.messages }))
       end
 
       def legacy_query_task?
@@ -140,7 +140,8 @@ module Temporal
           commands: run_result.commands,
           binary_checksum: binary_checksum,
           query_results: query_results,
-          new_sdk_flags_used: run_result.new_sdk_flags_used
+          new_sdk_flags_used: run_result.new_sdk_flags_used,
+          **(run_result.messages&.empty? != false ? {} : { messages: run_result.messages })
         )
       end
 
