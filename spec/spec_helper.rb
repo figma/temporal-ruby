@@ -14,6 +14,7 @@
 #
 # See http://rubydoc.info/gems/rspec-core/RSpec/Core/Configuration
 
+require 'ostruct'
 require 'temporal'
 require 'google/protobuf/well_known_types'
 require 'pry'

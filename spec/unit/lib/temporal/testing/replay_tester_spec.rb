@@ -12,12 +12,12 @@ describe Temporal::Testing::ReplayTester do
   end
 
   class TestReplayWorkflow < Temporal::Workflow
-    def execute(run_activity: false, run_sleep: false, result: "success")
-      TestReplayActivity.execute! if run_activity
+    def execute(options = {})
+      TestReplayActivity.execute! if options[:run_activity]
 
-      workflow.sleep(1) if run_sleep
+      workflow.sleep(1) if options[:run_sleep]
 
-      case result
+      case options.fetch(:result, "success")
       when "success"
         "done"
       when "continue_as_new"

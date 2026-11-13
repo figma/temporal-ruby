@@ -40,6 +40,7 @@ describe 'Temporal protobuf loading' do
 
   it 'loads its own messages and stubs without the opt-in' do
     stdout, stderr, status = run_probe(exercise_coinbase + <<~'RUBY')
+      raise 'official SDK loaded without the opt-in' if defined?(Temporalio::Client)
       raise 'legacy messages were not loaded' unless $LOADED_FEATURES.any? do |path|
         path.include?('/gen/temporal/api/common/v1/message_pb.rb')
       end
@@ -51,7 +52,8 @@ describe 'Temporal protobuf loading' do
     skip 'Run with BUNDLE_GEMFILE=gemfiles/temporalio.gemfile' unless ENV['BUNDLE_GEMFILE']&.end_with?('temporalio.gemfile')
 
     stdout, stderr, status = run_probe(
-      "require 'temporalio/client'\nrequire 'temporalio/worker'\n" + exercise_coinbase + <<~'RUBY',
+      "require 'temporalio/client'\n" + exercise_coinbase + <<~'RUBY',
+        require 'temporalio/worker'
         message_loads = $LOADED_FEATURES.grep(%r{/gen/temporal/api/.*_pb\.rb$}).reject do |path|
           path.end_with?('_services_pb.rb')
         end
