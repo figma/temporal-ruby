@@ -419,7 +419,7 @@ describe Temporal::Workflow::Context do
         stack_trace = query_registry.handle(Temporal::Workflow::StackTraceTracker::STACK_TRACE_QUERY_NAME)
 
         expect(stack_trace).to start_with('Fiber count: 1')
-        expect(stack_trace).to include('block in wait_for_any')
+        expect(stack_trace).to match(/block in (?:[^'\n]+#)?wait_for_any'/)
       end
 
       it 'cleared after unblocked' do
@@ -488,7 +488,7 @@ describe Temporal::Workflow::Context do
         stack_trace = query_registry.handle(Temporal::Workflow::StackTraceTracker::STACK_TRACE_QUERY_NAME)
 
         expect(stack_trace).to start_with('Fiber count: 1')
-        expect(stack_trace).to include('block in wait_until')
+        expect(stack_trace).to match(/block in (?:[^'\n]+#)?wait_until'/)
       end
 
       it 'cleared after unblocked' do
