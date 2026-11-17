@@ -1,3 +1,4 @@
+require 'ostruct'
 require 'fabrication'
 
 Fabrication.configure do |config|
