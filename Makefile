@@ -5,6 +5,7 @@ PROTO_OUT := lib/gen
 
 proto:
 	@set -e; $(foreach PROTO_DIR,$(PROTO_DIRS),bundle exec grpc_tools_ruby_protoc -Iproto --ruby_out=$(PROTO_OUT) --grpc_out=$(PROTO_OUT) $(PROTO_DIR)*.proto;)
-	@for script in scripts/backport_*.rb; do bundle exec ruby "$$script" || exit $$?; done
+	@for script in scripts/backport_*.rb; do bundle exec ruby "$$script" "$(PROTO_OUT)" || exit $$?; done
+	sed -i "/^require 'temporal\// s/$$/ unless ENV['COINBASE_TEMPORAL_RUBY_DISABLE_PROTO_LOAD'] == '1'/" $(PROTO_OUT)/temporal/api/workflowservice/v1/service_services_pb.rb $(PROTO_OUT)/temporal/api/operatorservice/v1/service_services_pb.rb
 
 .PHONY: proto

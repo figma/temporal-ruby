@@ -3,7 +3,8 @@
 
 require 'google/protobuf/descriptor_pb'
 
-path = File.expand_path('../lib/gen/temporal/api/failure/v1/message_pb.rb', __dir__)
+proto_out = ARGV[0] || File.expand_path('../lib/gen', __dir__)
+path = File.join(proto_out, 'temporal/api/failure/v1/message_pb.rb')
 source = File.read(path)
 match = source.match(/^descriptor_data = (".*")$/)
 raise 'Unexpected generated failure descriptor' unless match
