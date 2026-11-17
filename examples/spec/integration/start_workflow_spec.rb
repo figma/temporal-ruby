@@ -36,7 +36,7 @@ describe 'Temporal.start_workflow', :integration do
     expect(result).to eq('Hello World, Test')
   end
 
-  it 'returns the running execution for :use_existing without delivering the new input' do
+  it 'returns the running execution for :use_existing without delivering the new input', :workflow_id_conflict_policy do
     original_run_id = Temporal.start_workflow(WaitForExternalSignalWorkflow, 'original',
       options: { workflow_id: workflow_id })
 

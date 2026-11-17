@@ -615,3 +615,15 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+### Workflow conflict-policy integration tests
+
+The legacy example suite uses Temporal 1.22. Run it with
+`bundle exec rspec --tag ~workflow_id_conflict_policy` from `examples/`.
+The running-workflow `USE_EXISTING` case requires a newer server: use
+`docker compose -f examples/docker-compose-conflict-policy.yml up -d`
+instead of the legacy Compose stack, then follow the same namespace/worker
+setup and run `bundle exec rspec spec/integration/start_workflow_spec.rb`
+from `examples/`. Stop the first stack before starting the other; both use
+port 7233. CI runs both configurations, including all six workflow-start cases
+against Temporal 1.29.1 with PostgreSQL visibility.
