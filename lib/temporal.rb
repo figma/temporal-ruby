@@ -1,4 +1,4 @@
-# Protoc wants all of its generated files on the LOAD_PATH. Only require protos if not disabled.
+# The official SDK owns API messages when both SDKs share a process.
 unless ENV['COINBASE_TEMPORAL_RUBY_DISABLE_PROTO_LOAD'] == '1'
   $LOAD_PATH << File.expand_path('./gen', __dir__)
 end

@@ -1,14 +1,12 @@
+unless ENV['COINBASE_TEMPORAL_RUBY_DISABLE_PROTO_LOAD'] == '1'
+  require "gen/temporal/api/history/v1/message_pb"
+end
 require "json"
 require "temporal/errors"
 require "temporal/metadata/workflow_task"
 require "temporal/middleware/chain"
 require "temporal/workflow/executor"
 require "temporal/workflow/stack_trace_tracker"
-
-# Only require protos if not disabled
-unless ENV['COINBASE_TEMPORAL_RUBY_DISABLE_PROTO_LOAD'] == '1'
-  require "gen/temporal/api/history/v1/message_pb"
-end
 
 module Temporal
   module Testing

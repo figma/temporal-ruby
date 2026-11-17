@@ -3,6 +3,15 @@ require 'time'
 require 'google/protobuf/well_known_types'
 require 'securerandom'
 require 'json'
+unless ENV['COINBASE_TEMPORAL_RUBY_DISABLE_PROTO_LOAD'] == '1'
+  require 'gen/temporal/api/filter/v1/message_pb'
+  require 'gen/temporal/api/enums/v1/workflow_pb'
+  require 'gen/temporal/api/enums/v1/common_pb'
+end
+
+# Coinbase still uses Ruby gRPC stubs with the official SDK's message classes.
+require 'gen/temporal/api/workflowservice/v1/service_services_pb'
+require 'gen/temporal/api/operatorservice/v1/service_services_pb'
 require 'temporal/connection/errors'
 require 'temporal/connection/interceptors/client_name_version_interceptor'
 require 'temporal/connection/serializer'
@@ -11,17 +20,6 @@ require 'temporal/connection/serializer/backfill'
 require 'temporal/connection/serializer/schedule'
 require 'temporal/connection/serializer/workflow_id_reuse_policy'
 require 'temporal/connection/serializer/retry_policy'
-
-# Only require protos if not disabled. This env var is commonly set to work alongside the temporalio/sdk-ruby project.
-unless ENV['COINBASE_TEMPORAL_RUBY_DISABLE_PROTO_LOAD'] == '1'
-  require 'gen/temporal/api/filter/v1/message_pb'
-  require 'gen/temporal/api/enums/v1/workflow_pb'
-  require 'gen/temporal/api/enums/v1/common_pb'
-end
-
-# These are gRPC stubs, not protos, and therefore are not disabled when protos are
-require 'gen/temporal/api/workflowservice/v1/service_services_pb'
-require 'gen/temporal/api/operatorservice/v1/service_services_pb'
 
 module Temporal
   module Connection
