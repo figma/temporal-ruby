@@ -54,7 +54,7 @@ module Temporal
             if retry_delay
               # Older failures may carry zero; preserve their metadata without applying outbound validation.
               Temporal::RetryDelay.restore(exception,
-                                           retry_delay.seconds + retry_delay.nanos.quo(1_000_000_000).to_f)
+                                           (retry_delay.seconds + retry_delay.nanos.quo(1_000_000_000)).to_f)
             end
             backtrace = failure.stack_trace.split("\n")
             exception.set_backtrace(backtrace) if !backtrace.empty?

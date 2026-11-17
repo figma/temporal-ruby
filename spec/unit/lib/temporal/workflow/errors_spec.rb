@@ -88,6 +88,17 @@ describe Temporal::Workflow::Errors do
 
     end
 
+    it 'rounds retry delay seconds and nanoseconds together when restoring an error' do
+      failure = Fabricate(:api_application_failure, message: 'rate limited', backtrace: [],
+                         error_class: SomeError.to_s)
+      failure.application_failure_info.next_retry_delay = Google::Protobuf::Duration.new(seconds: 1, nanos: 118_000_000)
+
+      error = described_class.generate_error(failure, converter)
+
+      expect(error).to be_a(SomeError)
+      expect(error.next_retry_delay).to eq(1.118)
+    end
+
     it 'retains a retry delay when the original error class is unavailable' do
       failure = Fabricate(:api_application_failure, message: 'rate limited', backtrace: [],
                          error_class: 'MissingRateLimitError')
