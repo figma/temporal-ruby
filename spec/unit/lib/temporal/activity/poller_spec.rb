@@ -54,6 +54,24 @@ describe Temporal::Activity::Poller do
   end
 
   describe '#start' do
+    it 'keeps metrics separate for pools with the same custom connection identity' do
+      config.identity = 'shared-worker'
+      ids = []
+      allow(Temporal::ThreadPool).to receive(:new) do |*args|
+        ids << args.last.fetch(:worker_metrics_tags).fetch(:worker_id)
+        thread_pool
+      end
+      other = described_class.new(namespace, task_queue, lookup, config, middleware)
+
+      subject.send(:thread_pool)
+      subject.send(:thread_pool)
+      other.send(:thread_pool)
+
+      expect(ids.size).to eq(2)
+      expect(ids.uniq.size).to eq(2)
+      expect(config.for_connection.identity).to eq('shared-worker')
+    end
+
     it 'measures time between polls' do
       # if it doesn't poll, this test will loop forever
       times = poll(nil, times: 2)

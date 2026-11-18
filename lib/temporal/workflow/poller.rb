@@ -1,3 +1,4 @@
+require 'securerandom'
 require 'grpc/errors'
 require 'temporal/connection'
 require 'temporal/thread_pool'
@@ -130,9 +131,9 @@ module Temporal
             namespace: namespace,
             task_queue: task_queue,
             worker_type: 'WorkflowWorker',
-            # DogStatsD gauges from multiple worker processes otherwise share
-            # one metric context and overwrite each other.
-            worker_id: config.for_connection.identity.to_s.strip
+            # Custom connection identities may be shared across processes.
+            # Keep each pool in a separate DogStatsD gauge context.
+            worker_id: "#{config.for_connection.identity.to_s.strip}:#{SecureRandom.uuid}"
           }
         )
       end
