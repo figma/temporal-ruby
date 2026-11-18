@@ -37,16 +37,19 @@ describe 'Temporal.start_workflow', :integration do
   end
 
   it 'returns the running execution for :use_existing without delivering the new input', :workflow_id_conflict_policy do
+    outcomes = []
+    options = { workflow_id: workflow_id, workflow_id_conflict_policy: :use_existing }
     original_run_id = Temporal.start_workflow(WaitForExternalSignalWorkflow, 'original',
-      options: { workflow_id: workflow_id })
+      options: options) { |started| outcomes << started }
 
     expect do
       Temporal.start_workflow(WaitForExternalSignalWorkflow, 'replacement', options: { workflow_id: workflow_id })
     end.to raise_error(Temporal::WorkflowExecutionAlreadyStartedFailure)
 
     returned_run_id = Temporal.start_workflow(WaitForExternalSignalWorkflow, 'replacement',
-      options: { workflow_id: workflow_id, workflow_id_conflict_policy: :use_existing })
+      options: options) { |started| outcomes << started }
 
+    expect(outcomes).to eq([true, false])
     expect(returned_run_id).to eq(original_run_id)
     started = fetch_history(workflow_id, original_run_id).history.events.find do |event|
       event.event_type == :EVENT_TYPE_WORKFLOW_EXECUTION_STARTED
