@@ -94,6 +94,7 @@ describe Temporal::Connection::GRPC do
         expect(request.workflow_task_timeout.seconds).to eq(3)
         expect(request.workflow_start_delay.seconds).to eq(10)
         expect(request.workflow_id_reuse_policy).to eq(:WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE)
+        expect(request.workflow_id_conflict_policy).to eq(:WORKFLOW_ID_CONFLICT_POLICY_UNSPECIFIED)
         expect(request.retry_policy).to be_nil
         expect(request.search_attributes.indexed_fields).to eq({
           'foo-int-attribute' => Temporalio::Api::Common::V1::Payload.new(data: '256', metadata: { 'encoding' => 'json/plain' }),
@@ -103,6 +104,47 @@ describe Temporal::Connection::GRPC do
           'foo-datetime-attribute' => Temporalio::Api::Common::V1::Payload.new(data: "\"#{datetime_attribute_value.utc.iso8601}\"", metadata: { 'encoding' => 'json/plain' }),
         })
       end
+    end
+
+    it 'sends :use_existing separately from the closed-run reuse policy' do
+      allow(grpc_stub).to receive(:start_workflow_execution).and_return(
+        Temporalio::Api::WorkflowService::V1::StartWorkflowExecutionResponse.new(run_id: run_id)
+      )
+
+      response = subject.start_workflow_execution(
+        namespace: namespace, workflow_id: workflow_id, workflow_name: 'Test', task_queue: 'test',
+        execution_timeout: 0, run_timeout: 0, task_timeout: 0,
+        workflow_id_reuse_policy: :reject, workflow_id_conflict_policy: :use_existing
+      )
+
+      expect(response.run_id).to eq(run_id)
+      expect(grpc_stub).to have_received(:start_workflow_execution) do |request|
+        expect(request.workflow_id_reuse_policy).to eq(:WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE)
+        expect(request.workflow_id_conflict_policy).to eq(:WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING)
+      end
+    end
+
+    it 'rejects a false conflict policy before sending a request' do
+      allow(grpc_stub).to receive(:start_workflow_execution)
+      expect do
+        subject.start_workflow_execution(
+          namespace: namespace, workflow_id: workflow_id, workflow_name: 'Test', task_queue: 'test',
+          execution_timeout: 0, run_timeout: 0, task_timeout: 0,
+          workflow_id_conflict_policy: false
+        )
+      end.to raise_error(Temporal::Connection::ArgumentError, /Unknown workflow_id_conflict_policy/)
+      expect(grpc_stub).not_to have_received(:start_workflow_execution)
+    end
+
+    it 'rejects a conflict policy combined with the deprecated terminate-if-running reuse policy' do
+      expect do
+        subject.start_workflow_execution(
+          namespace: namespace, workflow_id: workflow_id, workflow_name: 'Test', task_queue: 'test',
+          execution_timeout: 0, run_timeout: 0, task_timeout: 0,
+          workflow_id_reuse_policy: :terminate_if_running,
+          workflow_id_conflict_policy: :use_existing
+        )
+      end.to raise_error(Temporal::Connection::ArgumentError, /cannot be combined/)
     end
 
     it 'sends the retry policy when one is given' do

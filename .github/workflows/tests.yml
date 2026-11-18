@@ -40,11 +40,20 @@ jobs:
       - name: Test protobuf coexistence
         run: bundle exec rspec spec/unit/lib/temporal/protobuf_loading_spec.rb
 
-  test_examples:
+  test_examples_matrix:
+    name: test_examples (${{ matrix.server }})
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
+      matrix:
+        include:
+          - server: legacy
+            compose_file: examples/docker-compose.yml
+            rspec_args: "--tag ~workflow_id_conflict_policy"
+          - server: conflict-policy
+            compose_file: examples/docker-compose-conflict-policy.yml
+            rspec_args: spec/integration/start_workflow_spec.rb
 
     steps:
       - uses: actions/checkout@v3
@@ -52,7 +61,7 @@ jobs:
       - name: Start dependencies
         run: |
           docker compose \
-            -f examples/docker-compose.yml \
+            -f ${{ matrix.compose_file }} \
             up -d
 
       - name: Set up Ruby
@@ -96,4 +105,12 @@ jobs:
         env:
           USE_ERROR_SERIALIZATION_V2: 1
         run: |
-          cd examples && bundle exec rspec
+          cd examples && bundle exec rspec ${{ matrix.rspec_args }}
+
+  test_examples:
+    if: always()
+    needs: test_examples_matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both example configurations to pass
+        run: test "${{ needs.test_examples_matrix.result }}" = "success"

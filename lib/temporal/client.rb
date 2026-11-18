@@ -31,6 +31,7 @@ module Temporal
     # @param options [Hash, nil] optional overrides
     # @option options [String] :workflow_id
     # @option options [Symbol] :workflow_id_reuse_policy check Temporal::Connection::GRPC::WORKFLOW_ID_REUSE_POLICY
+    # @option options [Symbol] :workflow_id_conflict_policy :use_existing returns the running workflow's run ID without delivering new input
     # @option options [String] :name workflow name
     # @option options [String] :namespace
     # @option options [String] :task_queue
@@ -49,6 +50,9 @@ module Temporal
 
       signal_name = options.delete(:signal_name)
       signal_input = options.delete(:signal_input)
+      if (!signal_name.nil? || !signal_input.nil?) && options.key?(:workflow_id_conflict_policy)
+        raise ArgumentError, 'workflow_id_conflict_policy is not supported with signal-with-start'
+      end
 
       execution_options = ExecutionOptions.new(workflow, options, config.default_execution_options)
       workflow_id = options[:workflow_id] || SecureRandom.uuid
@@ -65,6 +69,7 @@ module Temporal
           run_timeout: compute_run_timeout(execution_options),
           task_timeout: execution_options.timeouts[:task],
           workflow_id_reuse_policy: options[:workflow_id_reuse_policy],
+          workflow_id_conflict_policy: options[:workflow_id_conflict_policy],
           headers: config.header_propagator_chain.inject(execution_options.headers),
           memo: execution_options.memo,
           search_attributes: Workflow::Context::Helpers.process_search_attributes(execution_options.search_attributes),
@@ -117,6 +122,9 @@ module Temporal
     #
     # @return [String] workflow's run ID
     def schedule_workflow(workflow, cron_schedule, *input, options: {}, **args)
+      if options.key?(:workflow_id_conflict_policy)
+        raise ArgumentError, 'workflow_id_conflict_policy is not supported with schedule_workflow'
+      end
       input << args unless args.empty?
 
       execution_options = ExecutionOptions.new(workflow, options, config.default_execution_options)

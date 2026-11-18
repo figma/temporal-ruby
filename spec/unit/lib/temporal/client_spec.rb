@@ -69,6 +69,7 @@ describe Temporal::Client do
             run_timeout: config.timeouts[:run],
             execution_timeout: config.timeouts[:execution],
             workflow_id_reuse_policy: nil,
+            workflow_id_conflict_policy: nil,
             headers: { 'test' => 'asdf' },
             memo: {},
             search_attributes: {},
@@ -95,6 +96,16 @@ describe Temporal::Client do
         expect(result).to eq(temporal_response.run_id)
       end
 
+      it 'forwards :use_existing and returns the run ID supplied by the server' do
+        options = { workflow_id: 'existing', workflow_id_conflict_policy: :use_existing }
+        result = subject.start_workflow(TestStartWorkflow, 42, options: options)
+
+        expect(result).to eq(temporal_response.run_id)
+        expect(options).to eq(workflow_id: 'existing', workflow_id_conflict_policy: :use_existing)
+        expect(connection).to have_received(:start_workflow_execution)
+          .with(hash_including(workflow_id: 'existing', input: [42], workflow_id_conflict_policy: :use_existing))
+      end
+
       it 'starts a workflow using the default options' do
         subject.start_workflow(TestStartWorkflow, 42)
 
@@ -110,6 +121,7 @@ describe Temporal::Client do
             run_timeout: config.timeouts[:run],
             execution_timeout: config.timeouts[:execution],
             workflow_id_reuse_policy: nil,
+            workflow_id_conflict_policy: nil,
             headers: {},
             memo: {},
             search_attributes: {},
@@ -146,6 +158,7 @@ describe Temporal::Client do
             run_timeout: config.timeouts[:run],
             execution_timeout: config.timeouts[:execution],
             workflow_id_reuse_policy: :reject,
+            workflow_id_conflict_policy: nil,
             headers: { 'Foo' => 'Bar' },
             memo: { 'MemoKey1' => 'MemoValue1' },
             search_attributes: { 'SearchAttribute1' => 256 },
@@ -175,6 +188,7 @@ describe Temporal::Client do
             run_timeout: config.timeouts[:run],
             execution_timeout: config.timeouts[:execution],
             workflow_id_reuse_policy: nil,
+            workflow_id_conflict_policy: nil,
             headers: {},
             memo: {},
             search_attributes: {},
@@ -198,6 +212,7 @@ describe Temporal::Client do
             run_timeout: config.timeouts[:run],
             execution_timeout: config.timeouts[:execution],
             workflow_id_reuse_policy: nil,
+            workflow_id_conflict_policy: nil,
             headers: {},
             memo: {},
             search_attributes: {},
@@ -223,6 +238,7 @@ describe Temporal::Client do
             run_timeout: config.timeouts[:run],
             execution_timeout: config.timeouts[:execution],
             workflow_id_reuse_policy: :allow,
+            workflow_id_conflict_policy: nil,
             headers: {},
             memo: {},
             search_attributes: {},
@@ -252,6 +268,7 @@ describe Temporal::Client do
             run_timeout: config.timeouts[:run],
             execution_timeout: config.timeouts[:execution],
             workflow_id_reuse_policy: nil,
+            workflow_id_conflict_policy: nil,
             headers: {},
             memo: {},
             search_attributes: {},
@@ -352,11 +369,33 @@ describe Temporal::Client do
         )
       end.to raise_error(ArgumentError)
     end
+
+    it 'rejects a conflict policy on signal-with-start, even for a false-valued signal input' do
+      expect do
+        subject.start_workflow(TestStartWorkflow, options: {
+          signal_name: 'the question', workflow_id_conflict_policy: :use_existing
+        })
+      end.to raise_error(ArgumentError, /not supported with signal-with-start/)
+
+      expect do
+        subject.start_workflow(TestStartWorkflow, options: {
+          signal_input: false, workflow_id_conflict_policy: :use_existing
+        })
+      end.to raise_error(ArgumentError, /not supported with signal-with-start/)
+      expect(connection).not_to have_received(:signal_with_start_workflow_execution)
+    end
   end
 
   describe '#schedule_workflow' do
     let(:temporal_response) do
       Temporalio::Api::WorkflowService::V1::StartWorkflowExecutionResponse.new(run_id: 'xxx')
+    end
+
+    it 'rejects a conflict policy rather than silently ignoring it' do
+      expect do
+        subject.schedule_workflow(TestStartWorkflow, '* * * * *',
+          options: { workflow_id_conflict_policy: :use_existing })
+      end.to raise_error(ArgumentError, /not supported with schedule_workflow/)
     end
 
     before { allow(connection).to receive(:start_workflow_execution).and_return(temporal_response) }

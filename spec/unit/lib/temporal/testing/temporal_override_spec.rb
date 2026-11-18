@@ -153,6 +153,12 @@ describe Temporal::Testing::TemporalOverride do
         end
       end
 
+      it 'rejects conflict policy when running workflows locally' do
+        expect do
+          client.start_workflow(TestTemporalOverrideWorkflow, options: { workflow_id_conflict_policy: :use_existing })
+        end.to raise_error(NotImplementedError, /workflow_id_conflict_policy is not available/)
+      end
+
       describe 'execution control' do
         subject do
           client.start_workflow(

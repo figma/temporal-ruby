@@ -75,6 +75,10 @@ module Temporal
         options = args.delete(:options) || {}
         input << args unless args.empty?
 
+        if options.key?(:workflow_id_conflict_policy)
+          raise NotImplementedError, 'workflow_id_conflict_policy is not available when Temporal::Testing.local! is on'
+        end
+
         # signals aren't supported at all, so let's prohibit start_workflow calls that try to signal
         signal_name = options.delete(:signal_name)
         signal_input = options.delete(:signal_input)
