@@ -1,9 +1,9 @@
 # The checked-in Temporal API bindings predate the workflow ID conflict policy.
 # Apply only the two additive descriptor changes needed for ordinary starts.
 
-root = File.expand_path('..', __dir__)
-enum_path = File.join(root, 'lib/gen/temporal/api/enums/v1/workflow_pb.rb')
-request_path = File.join(root, 'lib/gen/temporal/api/workflowservice/v1/request_response_pb.rb')
+proto_out = ARGV[0] || File.expand_path('../lib/gen', __dir__)
+enum_path = File.join(proto_out, 'temporal/api/enums/v1/workflow_pb.rb')
+request_path = File.join(proto_out, 'temporal/api/workflowservice/v1/request_response_pb.rb')
 
 def replace_once(path, before, after, marker)
   source = File.read(path)

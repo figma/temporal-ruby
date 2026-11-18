@@ -7,7 +7,7 @@
 # generated dependencies. Field numbers, types and service names match upstream.
 require 'google/protobuf/descriptor_pb'
 
-ROOT = File.expand_path('../lib/gen/temporal/api', __dir__)
+ROOT = File.join(ARGV[0] || File.expand_path('../lib/gen', __dir__), 'temporal/api')
 P = Google::Protobuf
 SERVICE = '.temporal.api.workflowservice.v1.'
 

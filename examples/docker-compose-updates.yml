@@ -1,0 +1,22 @@
+services:
+  temporal:
+    image: temporalio/auto-setup:1.32.0
+    ports:
+      - "7233:7233"
+    environment:
+      - "DB=postgres12"
+      - "DB_PORT=5432"
+      - "POSTGRES_USER=temporal"
+      - "POSTGRES_PWD=temporal"
+      - "POSTGRES_SEEDS=postgresql"
+      - "DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/config/dynamicconfig/temporal-ruby.yaml"
+    volumes:
+      - ./dynamic-config.yml:/etc/temporal/config/dynamicconfig/temporal-ruby.yaml
+    depends_on:
+      - postgresql
+
+  postgresql:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal

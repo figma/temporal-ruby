@@ -3,11 +3,15 @@ require 'time'
 require 'google/protobuf/well_known_types'
 require 'securerandom'
 require 'json'
-require 'gen/temporal/api/filter/v1/message_pb'
+unless ENV['COINBASE_TEMPORAL_RUBY_DISABLE_PROTO_LOAD'] == '1'
+  require 'gen/temporal/api/filter/v1/message_pb'
+  require 'gen/temporal/api/enums/v1/workflow_pb'
+  require 'gen/temporal/api/enums/v1/common_pb'
+end
+
+# Coinbase still uses Ruby gRPC stubs with the official SDK's message classes.
 require 'gen/temporal/api/workflowservice/v1/service_services_pb'
 require 'gen/temporal/api/operatorservice/v1/service_services_pb'
-require 'gen/temporal/api/enums/v1/workflow_pb'
-require 'gen/temporal/api/enums/v1/common_pb'
 require 'temporal/connection/errors'
 require 'temporal/connection/interceptors/client_name_version_interceptor'
 require 'temporal/connection/serializer'
