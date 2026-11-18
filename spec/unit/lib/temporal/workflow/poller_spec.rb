@@ -64,6 +64,24 @@ describe Temporal::Workflow::Poller do
   end
 
   describe '#start' do
+    it 'keeps metrics separate for pools with the same custom connection identity' do
+      config.identity = 'shared-worker'
+      ids = []
+      allow(Temporal::ThreadPool).to receive(:new) do |*args|
+        ids << args.last.fetch(:worker_metrics_tags).fetch(:worker_id)
+        instance_double(Temporal::ThreadPool)
+      end
+      other = described_class.new(namespace, task_queue, lookup, config, middleware, workflow_middleware)
+
+      subject.send(:thread_pool)
+      subject.send(:thread_pool)
+      other.send(:thread_pool)
+
+      expect(ids.size).to eq(2)
+      expect(ids.uniq.size).to eq(2)
+      expect(config.for_connection.identity).to eq('shared-worker')
+    end
+
     it 'polls for workflow tasks' do
       subject.start
       times = poll(nil, times: 2)

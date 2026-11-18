@@ -1,3 +1,4 @@
+require 'securerandom'
 require 'temporal/activity/task_processor'
 require 'temporal/connection'
 require 'temporal/error_handler'
@@ -129,6 +130,14 @@ module Temporal
             pool_name: 'activity_task_poller',
             namespace: namespace,
             task_queue: task_queue
+          },
+          worker_metrics_tags: {
+            namespace: namespace,
+            task_queue: task_queue,
+            worker_type: 'ActivityWorker',
+            # Custom connection identities may be shared across processes.
+            # Keep each pool in a separate DogStatsD gauge context.
+            worker_id: "#{config.for_connection.identity.to_s.strip}:#{SecureRandom.uuid}"
           }
         )
       end
