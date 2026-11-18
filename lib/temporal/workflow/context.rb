@@ -30,6 +30,9 @@ module Temporal
         @metadata = metadata
         @completed = false
         @config = config
+        dispatcher.register_handler(History::EventTarget.start_workflow, 'completing') do
+          flush_update_completion
+        end
 
         if track_stack_trace
           @stack_trace_tracker = StackTraceTracker.new
@@ -66,6 +69,7 @@ module Temporal
       end
 
       def has_release?(release_name)
+        check_update_validator!
         state_manager.release?(release_name.to_s)
       end
 
@@ -196,6 +200,7 @@ module Temporal
       end
 
       def side_effect(&block)
+        check_update_validator!
         marker = state_manager.next_side_effect
         return marker.last if marker
 
@@ -239,6 +244,13 @@ module Temporal
 
       # TODO: check if workflow can be completed
       def complete(result = nil)
+        check_update_validator!
+        if state_manager.update_registry.registered?
+          raise ArgumentError, 'Update handlers cannot complete the Workflow' if current_update
+          @pending_update_completion = Command::CompleteWorkflow.new(result: result)
+          completed!
+          return
+        end
         command = Command::CompleteWorkflow.new(result: result)
         schedule_command(command)
         completed!
@@ -246,12 +258,24 @@ module Temporal
 
       # TODO: check if workflow can be failed
       def fail(exception)
+        check_update_validator!
+        if state_manager.update_registry.registered?
+          raise ArgumentError, 'Update handlers cannot fail the Workflow' if current_update
+          @pending_update_completion = Command::FailWorkflow.new(exception: exception)
+          completed!
+          return
+        end
         command = Command::FailWorkflow.new(exception: exception)
         schedule_command(command)
         completed!
       end
 
       def continue_as_new(*input, **args)
+        check_update_validator!
+        raise ArgumentError, 'Update handlers cannot continue as new' if current_update
+        if state_manager.update_registry.active_count.positive?
+          raise ArgumentError, 'Wait for all Update handlers before continuing as new'
+        end
         options = args.delete(:options) || {}
         input << args unless args.empty?
 
@@ -274,7 +298,11 @@ module Temporal
           memo: execution_options.memo,
           search_attributes: Helpers.process_search_attributes(execution_options.search_attributes)
         )
-        schedule_command(command)
+        if state_manager.update_registry.registered?
+          @pending_update_completion = command
+        else
+          schedule_command(command)
+        end
         completed!
       end
 
@@ -288,13 +316,18 @@ module Temporal
       # Block workflow progress until one of the futures completes. Passing
       # in an empty array will immediately unblock.
       def wait_for_any(*futures)
+        check_update_validator!
         return if futures.empty? || futures.any?(&:finished?)
 
         fiber = Fiber.current
 
+        waiting = true
         handlers = futures.map do |future|
           dispatcher.register_handler(future.target, Dispatcher::WILDCARD) do
-            fiber.resume if future.finished?
+            if waiting && future.finished?
+              waiting = false
+              fiber.resume
+            end
           end
         end
 
@@ -303,6 +336,7 @@ module Temporal
           Fiber.yield
         ensure
           stack_trace_tracker&.clear
+          waiting = false
           handlers.each(&:unregister)
         end
 
@@ -311,6 +345,7 @@ module Temporal
 
       # Block workflow progress until the specified block evaluates to true.
       def wait_until(&unblock_condition)
+        check_update_validator!
         raise 'You must pass a block to wait_until' if unblock_condition.nil?
 
         return if unblock_condition.call
@@ -321,11 +356,18 @@ module Temporal
         # signal handlers or callbacks for timer or activity completion. Running the wait_until
         # handlers after the other handlers ensures that state is correctly updated before being
         # read.
+        # A nested dispatch (for example, an Update completing) can leave a
+        # snapshot of this callback in the outer dispatch. Resume at most once,
+        # even if the fiber has already progressed to another blocking operation.
+        waiting = true
         handler = dispatcher.register_handler(
           Dispatcher::WILDCARD, # any target
           Dispatcher::WILDCARD, # any event type
           Dispatcher::Order::AT_END) do
-          fiber.resume if unblock_condition.call
+          if waiting && unblock_condition.call
+            waiting = false
+            fiber.resume
+          end
         end
 
         stack_trace_tracker&.record
@@ -333,6 +375,7 @@ module Temporal
           Fiber.yield
         ensure
           stack_trace_tracker&.clear
+          waiting = false
           handler.unregister
         end
 
@@ -351,6 +394,7 @@ module Temporal
       #
       # @param signal_name [String, Symbol, nil] an optional signal name; converted to a String
       def on_signal(signal_name = nil, &block)
+        check_update_validator!
         first_task_signals = if state_manager.sdk_flags.include?(SDKFlags::SAVE_FIRST_TASK_SIGNALS)
           state_manager.first_task_signals
         else
@@ -382,7 +426,31 @@ module Temporal
         return
       end
 
+      # Register before the first blocking operation in #execute. Validators
+      # must be synchronous, deterministic, read-only checks that raise to reject.
+      def on_update(name, validator: nil, &block)
+        check_update_validator!
+        state_manager.update_registry.register(name, self, validator: validator, &block)
+      end
+
+      def all_update_handlers_finished?
+        state_manager.update_registry.active_count.zero?
+      end
+
+      def current_update
+        Thread.current[:temporal_current_update]
+      end
+
+      # Internal: completion waits until Updates accepted by this task have
+      # finished. This also permits an initial Update on an otherwise short Workflow.
+      def flush_update_completion
+        return unless @pending_update_completion && all_update_handlers_finished?
+        command, @pending_update_completion = @pending_update_completion, nil
+        schedule_command(command)
+      end
+
       def on_query(query, &block)
+        check_update_validator!
         query_registry.register(query, &block)
       end
 
@@ -484,6 +552,10 @@ module Temporal
       private
 
       attr_reader :state_manager, :dispatcher, :workflow_class, :query_registry, :stack_trace_tracker
+
+      def check_update_validator!(operation = 'block')
+        raise ArgumentError, "Update validators must not #{operation}" if state_manager.update_registry.validating?
+      end
 
       def completed!
         @completed = true

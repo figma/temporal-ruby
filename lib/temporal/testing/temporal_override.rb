@@ -10,6 +10,21 @@ module Temporal
   module Testing
     module TemporalOverride
 
+      def start_workflow_update(*args, **options)
+        raise NotImplementedError, 'Workflow Updates require a Temporal test server; local! does not simulate the Update protocol' unless Temporal::Testing.disabled?
+        super
+      end
+
+      def start_update_with_start_workflow(*args, **options)
+        raise NotImplementedError, 'Workflow Updates require a Temporal test server; local! does not simulate the Update protocol' unless Temporal::Testing.disabled?
+        super
+      end
+
+      def get_workflow_update_handle(*args, **options)
+        raise NotImplementedError, 'Workflow Updates require a Temporal test server; local! does not simulate the Update protocol' unless Temporal::Testing.disabled?
+        super
+      end
+
       def start_workflow(workflow, *input, **args)
         return super if Temporal::Testing.disabled?
 

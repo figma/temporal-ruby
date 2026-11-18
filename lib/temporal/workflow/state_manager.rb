@@ -7,6 +7,7 @@ require 'temporal/workflow/history/size'
 require 'temporal/workflow/errors'
 require 'temporal/workflow/sdk_flags'
 require 'temporal/workflow/signal'
+require 'temporal/workflow/update_registry'
 
 module Temporal
   class Workflow
@@ -17,7 +18,7 @@ module Temporal
       class UnsupportedEvent < Temporal::InternalError; end
       class UnsupportedMarkerType < Temporal::InternalError; end
 
-      attr_reader :local_time, :search_attributes, :new_sdk_flags_used, :sdk_flags, :first_task_signals
+      attr_reader :update_registry, :local_time, :search_attributes, :new_sdk_flags_used, :sdk_flags, :first_task_signals
 
       def initialize(dispatcher, config)
         @dispatcher = dispatcher
@@ -32,6 +33,8 @@ module Temporal
         @search_attributes = {}
         @config = config
         @converter = config.converter
+        @update_registry = UpdateRegistry.new(self, dispatcher, @converter)
+        @rejection_messages = []
 
         # Current flags in use, built up from workflow task completed history entries
         @sdk_flags = Set.new
@@ -56,6 +59,7 @@ module Temporal
       end
 
       def schedule(command)
+        raise ArgumentError, 'Update validators must not issue workflow commands' if update_registry.validating?
         # Fast-forward event IDs to skip all the markers (version markers can
         # be removed, so we can't rely on them being scheduled during a replay)
         command_id = next_event_id
@@ -83,6 +87,18 @@ module Temporal
         commands << [command_id, command]
 
         [event_target_from(command_id, command), cancelation_id]
+      end
+
+      def emit_update_message(message, durable:)
+        if durable
+          schedule(Command::ProtocolMessage.new(message: message))
+        else
+          @rejection_messages << message
+        end
+      end
+
+      def final_messages
+        commands.filter_map { |_, command| command.message if command.is_a?(Command::ProtocolMessage) } + @rejection_messages
       end
 
       def final_commands
@@ -242,10 +258,30 @@ module Temporal
       end
 
       def apply_event(event)
+        if event.is_a?(History::UpdateRequest)
+          dispatch(History::EventTarget.update_request, 'update_requested', event.message, event.replay)
+          return
+        end
         state_machine = command_tracker[event.originating_event_id]
         history_target = History::EventTarget.from_event(event)
 
         case event.type
+        when 'WORKFLOW_EXECUTION_UPDATE_ADMITTED'
+          # History inserts a corresponding UpdateRequest after this event.
+          # Admission itself does not consume a workflow command.
+
+        when 'WORKFLOW_EXECUTION_UPDATE_ACCEPTED', 'WORKFLOW_EXECUTION_UPDATE_COMPLETED'
+          update_id = if event.type == 'WORKFLOW_EXECUTION_UPDATE_ACCEPTED'
+                        event.attributes.protocol_instance_id
+                      else
+                        event.attributes.meta.update_id
+                      end
+          command = commands.first&.last
+          unless command.is_a?(Command::ProtocolMessage) && command.message.protocol_instance_id == update_id
+            raise NonDeterministicWorkflowError, "Update command does not match history for #{update_id}"
+          end
+          discard_command(history_target)
+
         when 'WORKFLOW_EXECUTION_STARTED'
           unless event.attributes.search_attributes.nil?
             search_attributes.merge!(converter.from_payload_map(event.attributes.search_attributes&.indexed_fields || {}))
@@ -260,10 +296,12 @@ module Temporal
           )
 
         when 'WORKFLOW_EXECUTION_COMPLETED'
+          dispatch(History::EventTarget.start_workflow, 'completing')
           # should only be triggered in query execution and replay testing
           discard_command(history_target)
 
         when 'WORKFLOW_EXECUTION_FAILED'
+          dispatch(History::EventTarget.start_workflow, 'completing')
           # should only be triggered in query execution and replay testing
           discard_command(history_target)
 
@@ -366,6 +404,7 @@ module Temporal
           # todo
 
         when 'WORKFLOW_EXECUTION_CONTINUED_AS_NEW'
+          dispatch(History::EventTarget.start_workflow, 'completing')
           # should only be triggered in query execution and replay testing
           discard_command(history_target)
 
@@ -437,6 +476,12 @@ module Temporal
       def event_target_from(command_id, command)
         target_type =
           case command
+          when Command::ProtocolMessage
+            if command.message.body.type_url.end_with?('/temporal.api.update.v1.Acceptance')
+              History::EventTarget::UPDATE_ACCEPT_TYPE
+            else
+              History::EventTarget::UPDATE_COMPLETE_TYPE
+            end
           when Command::ScheduleActivity
             History::EventTarget::ACTIVITY_TYPE
           when Command::RequestActivityCancellation

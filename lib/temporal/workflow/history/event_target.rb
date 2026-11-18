@@ -6,6 +6,10 @@ module Temporal
       class EventTarget
         class UnexpectedEventType < InternalError; end
 
+        UPDATE_REQUEST_TYPE = :update_request
+        UPDATE_ACCEPT_TYPE = :update_accept
+        UPDATE_COMPLETE_TYPE = :update_complete
+
         ACTIVITY_TYPE                         = :activity
         CANCEL_ACTIVITY_REQUEST_TYPE          = :cancel_activity_request
         TIMER_TYPE                            = :timer
@@ -25,6 +29,8 @@ module Temporal
 
         # NOTE: The order is important, first prefix match wins (will be a longer match)
         TARGET_TYPES = {
+          'WORKFLOW_EXECUTION_UPDATE_ACCEPTED' => UPDATE_ACCEPT_TYPE,
+          'WORKFLOW_EXECUTION_UPDATE_COMPLETED' => UPDATE_COMPLETE_TYPE,
           'ACTIVITY_TASK_CANCEL_REQUESTED'             => CANCEL_ACTIVITY_REQUEST_TYPE,
           'ACTIVITY_TASK'                              => ACTIVITY_TYPE,
           'REQUEST_CANCEL_ACTIVITY_TASK'               => CANCEL_ACTIVITY_REQUEST_TYPE,
@@ -47,11 +53,15 @@ module Temporal
           'WORKFLOW_EXECUTION_STARTED'                 => START_WORKFLOW_TYPE,
           # This is a fall-through type for various event types that workflow code cannot
           # react to, either because they're externally triggered (workflow termination,
-          # timeout) or use an unsupported feature (workflow cancellation, updates).
+          # timeout) or use an unsupported feature (workflow cancellation).
           'WORKFLOW_EXECUTION'                         => WORKFLOW_TYPE,
         }.freeze
 
         attr_reader :id, :type
+
+        def self.update_request
+          @update_request ||= new(0, UPDATE_REQUEST_TYPE)
+        end
 
         def self.start_workflow
           @workflow ||= new(1, START_WORKFLOW_TYPE)

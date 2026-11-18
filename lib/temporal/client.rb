@@ -11,9 +11,11 @@ require 'temporal/workflow/execution_info'
 require 'temporal/workflow/executions'
 require 'temporal/workflow/status'
 require 'temporal/reset_strategy'
+require 'temporal/client_updates'
 
 module Temporal
   class Client
+    include ClientUpdates
     def initialize(config)
       @config = config
       @converter = config.converter

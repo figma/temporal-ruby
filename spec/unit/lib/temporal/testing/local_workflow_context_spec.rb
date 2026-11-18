@@ -76,6 +76,14 @@ describe Temporal::Testing::LocalWorkflowContext do
 
   describe '#execute_activity' do
     describe 'outcome is captured in the future' do
+      around do |example|
+        previous_context = Temporal::ThreadLocalContext.get
+        Temporal::ThreadLocalContext.set(workflow_context)
+        example.run
+      ensure
+        Temporal::ThreadLocalContext.set(previous_context)
+      end
+
       it 'delay failure' do
         f = workflow_context.execute_activity(TestFailedActivity)
         f.wait
@@ -86,6 +94,9 @@ describe Temporal::Testing::LocalWorkflowContext do
 
         expect(f.get).to be_a(RuntimeError)
         expect(f.get.message).to eq('oops')
+        callback_error = nil
+        f.failed { |error| callback_error = error }
+        expect(callback_error).to equal(f.get)
       end
 
       it 'successful synchronous result' do
@@ -97,6 +108,9 @@ describe Temporal::Testing::LocalWorkflowContext do
         expect(f.ready?).to be true
 
         expect(f.get).to eq('ok')
+        callback_result = nil
+        f.done { |result| callback_result = result }
+        expect(callback_result).to eq('ok')
       end
 
       it 'successful asynchronous result' do

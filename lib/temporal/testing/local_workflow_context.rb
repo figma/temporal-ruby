@@ -240,6 +240,10 @@ module Temporal
 
       private
 
+      # Local mode does not run Update validators, but ordinary Future callbacks
+      # share this guard with the server-backed workflow context.
+      def check_update_validator!(_operation); end
+
       attr_reader :execution, :run_id, :workflow_id, :disabled_releases
 
       def completed!

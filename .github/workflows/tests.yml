@@ -4,9 +4,78 @@ on:
   push:
     branches: [ "master" ]
   pull_request:
-    branches: [ "master" ]
 
 jobs:
+  test_generated_bindings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Verify clean and repeatable protobuf generation
+        run: |
+          make proto
+          git diff --exit-code -- lib/gen
+          make proto
+          git diff --exit-code -- lib/gen
+          generated_dir=$(mktemp -d)
+          make proto PROTO_OUT="$generated_dir"
+          diff -qr lib/gen "$generated_dir"
+          git diff --exit-code -- lib/gen
+
+  test_workflow_updates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TEMPORAL_UPDATE_INTEGRATION: '1'
+      TEMPORAL_UPDATE_PORT: '7233'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Start Temporal 1.32
+        run: |
+          curl -fsSL https://github.com/temporalio/cli/releases/download/v1.9.1/temporal_cli_1.9.1_linux_amd64.tar.gz -o "$RUNNER_TEMP/temporal.tar.gz"
+          echo "09a0326a51db84d02735e53542b9ebd8c4758daf47482a9ab0abce15844e60d5  $RUNNER_TEMP/temporal.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/temporal.tar.gz" -C "$RUNNER_TEMP" temporal
+          "$RUNNER_TEMP/temporal" server start-dev --port "$TEMPORAL_UPDATE_PORT" --headless > "$RUNNER_TEMP/temporal.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/temporal.pid"
+      - name: Wait for the default namespace
+        run: |
+          bundle exec ruby -rtemporal -rtimeout <<'RUBY'
+          Temporal.configure do |config|
+            config.host = '127.0.0.1'
+            config.port = Integer(ENV.fetch('TEMPORAL_UPDATE_PORT'))
+          end
+          Timeout.timeout(120) do
+            loop do
+              begin
+                Temporal.describe_namespace('default')
+                break
+              rescue GRPC::Unavailable, GRPC::NotFound
+                sleep 2
+              end
+            end
+          end
+          RUBY
+      - name: Run live Update and Update-With-Start coverage
+        run: bundle exec rspec spec/integration/update_with_start_spec.rb
+      - name: Show server logs on failure
+        if: failure()
+        run: tail -100 "$RUNNER_TEMP/temporal.log"
+      - name: Stop dependencies
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/temporal.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/temporal.pid")"
+          fi
+
   test_gem:
     runs-on: ubuntu-latest
 

@@ -1,14 +1,53 @@
 require 'temporal/workflow/history/event'
 require 'temporal/workflow/history/window'
+require 'temporal/workflow/history/update_request'
+require 'google/protobuf/well_known_types'
 
 module Temporal
   class Workflow
     class History
       attr_reader :events
 
-      def initialize(events)
+      def initialize(events, messages: [])
         @events = events.map { |event| History::Event.new(event) }
-        @iterator = @events.each
+        pending = {}
+        admitted = @events.each_with_object({}) do |event, requests|
+          requests[event.id] = event.attributes.request if event.type == 'WORKFLOW_EXECUTION_UPDATE_ADMITTED'
+        end
+        @events.each do |event|
+          next unless event.type == 'WORKFLOW_EXECUTION_UPDATE_ACCEPTED'
+          attrs = event.attributes
+          request = attrs.accepted_request || admitted[attrs.accepted_request_sequencing_event_id]
+          raise Temporal::InternalError, 'Accepted Update request is missing from history' unless request
+          message = Temporalio::Api::Protocol::V1::Message.new(
+            id: attrs.accepted_request_message_id, protocol_instance_id: attrs.protocol_instance_id,
+            event_id: attrs.accepted_request_sequencing_event_id,
+            body: Google::Protobuf::Any.pack(request)
+          )
+          pending[message.protocol_instance_id] = [message, true]
+        end
+        @events.each do |event|
+          next unless event.type == 'WORKFLOW_EXECUTION_UPDATE_ADMITTED'
+          request = event.attributes.request
+          id = request.meta.update_id
+          message = Temporalio::Api::Protocol::V1::Message.new(
+            id: "#{id}/request", protocol_instance_id: id, event_id: event.id,
+            body: Google::Protobuf::Any.pack(request)
+          )
+          # If this request was subsequently accepted, use its recorded message
+          # identity/sequence above and skip validation. Otherwise admission is
+          # a new delivery, including on a reset branch, and must be validated.
+          pending[id] ||= [message, false]
+        end
+        messages.each { |message| pending[message.protocol_instance_id] ||= [message, false] }
+        sequenced = pending.values.group_by { |message, _| message.event_id }
+        stream = @events.flat_map do |event|
+          [event] + (sequenced.delete(event.id) || []).map do |message, replay|
+            History::UpdateRequest.new(message, event.timestamp, replay: replay)
+          end
+        end
+        raise Temporal::InternalError, 'Update sequencing event is missing from history' unless sequenced.empty?
+        @iterator = stream.each
       end
 
       def find_event_by_id(id)
@@ -45,6 +84,8 @@ module Temporal
       private
 
       COMMAND_EVENT_TYPES = %w[
+        WORKFLOW_EXECUTION_UPDATE_ACCEPTED
+        WORKFLOW_EXECUTION_UPDATE_COMPLETED
         ACTIVITY_TASK_SCHEDULED
         ACTIVITY_TASK_CANCEL_REQUESTED
         TIMER_STARTED
