@@ -44,6 +44,8 @@ module Temporal
     # @option options [Hash] :search_attributes
     # @option options [Integer] :start_delay determines the amount of seconds to wait before initiating a Workflow
     #
+    # @yield [Boolean] for :use_existing, whether this request started a new run.
+    #   Requires a server that supports the conflict policy and reports the start outcome.
     # @return [String] workflow's run ID
     def start_workflow(workflow, *input, options: {}, **args)
       input << args unless args.empty?
@@ -99,6 +101,7 @@ module Temporal
         )
       end
 
+      yield response.started if block_given? && options[:workflow_id_conflict_policy] == :use_existing
       response.run_id
     end
 

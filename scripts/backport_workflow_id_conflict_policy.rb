@@ -1,5 +1,5 @@
 # The checked-in Temporal API bindings predate the workflow ID conflict policy.
-# Apply only the two additive descriptor changes needed for ordinary starts.
+# Apply only the additive descriptor changes needed for ordinary starts.
 
 proto_out = ARGV[0] || File.expand_path('../lib/gen', __dir__)
 enum_path = File.join(proto_out, 'temporal/api/enums/v1/workflow_pb.rb')
@@ -41,4 +41,20 @@ unless request_source.include?('workflow_id_conflict_policy')
     'workflow_start_delay\\x18\\x14 \\x01(\\x0b\\x32\\x19.google.protobuf.DurationB\\x04\\x98\\xdf\\x1f\\x01\\x12T\\n\\x1bworkflow_id_conflict_policy\\x18\\x16 \\x01(\\x0e\\x32/.temporal.api.enums.v1.WorkflowIdConflictPolicy\\"'
   ) or raise 'Unexpected StartWorkflowExecutionRequest fields'
   File.write(request_path, request_source)
+end
+
+# Inspect the descriptor itself: another backport may already provide the field
+# and may render the generated Ruby string literal with different escapes.
+require 'google/protobuf/descriptor_pb'
+source = File.read(request_path)
+line = source.lines.find { |l| l.start_with?('descriptor_data = ') } or raise 'Missing descriptor'
+descriptor = Google::Protobuf::FileDescriptorProto.decode(eval(line.delete_prefix('descriptor_data = ')))
+response = descriptor.message_type.find { |msg| msg.name == 'StartWorkflowExecutionResponse' }
+started = Google::Protobuf::FieldDescriptorProto.new(name: 'started', number: 3, type: :TYPE_BOOL, label: :LABEL_OPTIONAL)
+existing = response.field.find { |f| f.number == 3 || f.name == 'started' }
+raise 'Conflicting StartWorkflowExecutionResponse.started field' if existing && existing != started
+unless existing
+  response.field << started
+  encoded = Google::Protobuf::FileDescriptorProto.encode(descriptor)
+  File.write(request_path, source.sub(line) { "descriptor_data = #{encoded.dump}\n" })
 end
