@@ -40,7 +40,12 @@ jobs:
           ruby-version: '3.4'
           bundler-cache: true
       - name: Start Temporal 1.32
-        run: docker compose -f examples/docker-compose-updates.yml up -d
+        run: |
+          curl -fsSL https://github.com/temporalio/cli/releases/download/v1.9.1/temporal_cli_1.9.1_linux_amd64.tar.gz -o "$RUNNER_TEMP/temporal.tar.gz"
+          echo "09a0326a51db84d02735e53542b9ebd8c4758daf47482a9ab0abce15844e60d5  $RUNNER_TEMP/temporal.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/temporal.tar.gz" -C "$RUNNER_TEMP" temporal
+          "$RUNNER_TEMP/temporal" server start-dev --port "$TEMPORAL_UPDATE_PORT" --headless > "$RUNNER_TEMP/temporal.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/temporal.pid"
       - name: Wait for the default namespace
         run: |
           bundle exec ruby -rtemporal -rtimeout <<'RUBY'
@@ -63,10 +68,13 @@ jobs:
         run: bundle exec rspec spec/integration/update_with_start_spec.rb
       - name: Show server logs on failure
         if: failure()
-        run: docker compose -f examples/docker-compose-updates.yml logs --tail=100
+        run: tail -100 "$RUNNER_TEMP/temporal.log"
       - name: Stop dependencies
         if: always()
-        run: docker compose -f examples/docker-compose-updates.yml down -v
+        run: |
+          if [ -f "$RUNNER_TEMP/temporal.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/temporal.pid")"
+          fi
 
   test_gem:
     runs-on: ubuntu-latest
