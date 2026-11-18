@@ -1,4 +1,5 @@
 require 'temporal/thread_pool'
+require 'timeout'
 
 describe Temporal::ThreadPool do
   before do
@@ -100,6 +101,29 @@ describe Temporal::ThreadPool do
         .to have_received(:gauge)
         .with(Temporal::MetricKeys::WORKER_TASK_SLOTS_USED, 0, worker_metrics_tags)
         .at_least(:twice)
+    end
+
+    it 'shuts down promptly when the metrics thread has not started yet' do
+      start_threads = Queue.new
+      allow(Thread).to receive(:new).and_wrap_original do |original, &block|
+        original.call do
+          start_threads.pop
+          block.call
+        end
+      end
+      pool = described_class.new(size, config, tags, worker_metrics_tags: worker_metrics_tags)
+      allow(Thread).to receive(:new).and_call_original
+
+      # Wait until shutdown is joining the reporter before allowing that
+      # reporter to run. Other threads, including Timeout's watchdog, run normally.
+      shutdown_thread = Thread.start { pool.shutdown }
+      Timeout.timeout(2) { Thread.pass until shutdown_thread.status == 'sleep' }
+      (size + 1).times { start_threads << true }
+
+      expect(shutdown_thread.join(1)).to eq(shutdown_thread)
+    ensure
+      (size + 1).times { start_threads << true }
+      shutdown_thread&.join
     end
 
     it 'reports task slot usage while a task is running' do

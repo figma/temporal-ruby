@@ -96,7 +96,9 @@ module Temporal
       @metrics_reporter_thread = Thread.new do
         loop do
           shutting_down = @metrics_reporter_mutex.synchronize do
-            @metrics_reporter_condition.wait(@metrics_reporter_mutex, @metrics_report_interval_seconds)
+            unless @metrics_reporter_shutdown
+              @metrics_reporter_condition.wait(@metrics_reporter_mutex, @metrics_report_interval_seconds)
+            end
             @metrics_reporter_shutdown
           end
           break if shutting_down

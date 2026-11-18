@@ -5,6 +5,7 @@ require 'temporal/workflow'
 require 'temporal/workflow/history'
 require 'temporal/connection/grpc'
 require 'temporal/reset_reapply_type'
+require 'temporal/retry_policy'
 
 describe Temporal::Client do
   subject { described_class.new(config) }
@@ -18,6 +19,12 @@ describe Temporal::Client do
   class TestStartWorkflow < Temporal::Workflow
     namespace 'default-test-namespace'
     task_queue 'default-test-task-queue'
+  end
+
+  class TestStartWorkflowWithRetryPolicy < Temporal::Workflow
+    namespace 'default-test-namespace'
+    task_queue 'default-test-task-queue'
+    retry_policy(interval: 5, backoff: 2, max_attempts: 3)
   end
 
   before do
@@ -65,8 +72,19 @@ describe Temporal::Client do
             headers: { 'test' => 'asdf' },
             memo: {},
             search_attributes: {},
-            start_delay: 0
+            start_delay: 0,
+            retry_policy: nil
           )
+      end
+    end
+
+    context 'using a workflow class with a retry policy' do
+      it 'sends the retry policy with the start request' do
+        subject.start_workflow(TestStartWorkflowWithRetryPolicy, 42)
+
+        expect(connection)
+          .to have_received(:start_workflow_execution)
+          .with(hash_including(retry_policy: Temporal::RetryPolicy.new(interval: 5, backoff: 2, max_attempts: 3)))
       end
     end
 
@@ -95,7 +113,8 @@ describe Temporal::Client do
             headers: {},
             memo: {},
             search_attributes: {},
-            start_delay: 0
+            start_delay: 0,
+            retry_policy: nil
           )
       end
 
@@ -130,7 +149,8 @@ describe Temporal::Client do
             headers: { 'Foo' => 'Bar' },
             memo: { 'MemoKey1' => 'MemoValue1' },
             search_attributes: { 'SearchAttribute1' => 256 },
-            start_delay: 10
+            start_delay: 10,
+            retry_policy: nil
           )
       end
 
@@ -158,7 +178,8 @@ describe Temporal::Client do
             headers: {},
             memo: {},
             search_attributes: {},
-            start_delay: 0
+            start_delay: 0,
+            retry_policy: nil
           )
       end
 
@@ -180,7 +201,8 @@ describe Temporal::Client do
             headers: {},
             memo: {},
             search_attributes: {},
-            start_delay: 0
+            start_delay: 0,
+            retry_policy: nil
           )
       end
 
@@ -204,7 +226,8 @@ describe Temporal::Client do
             headers: {},
             memo: {},
             search_attributes: {},
-            start_delay: 0
+            start_delay: 0,
+            retry_policy: nil
           )
       end
     end
@@ -232,7 +255,8 @@ describe Temporal::Client do
             headers: {},
             memo: {},
             search_attributes: {},
-            start_delay: 0
+            start_delay: 0,
+            retry_policy: nil
           )
       end
     end
@@ -263,7 +287,8 @@ describe Temporal::Client do
           search_attributes: {},
           signal_name: 'the question',
           signal_input: expected_signal_argument,
-          start_delay: 0
+          start_delay: 0,
+          retry_policy: nil
         )
     end
 
@@ -274,6 +299,17 @@ describe Temporal::Client do
       )
 
       expect_signal_with_start([], nil)
+    end
+
+    it 'sends the retry policy with the signal-with-start request' do
+      subject.start_workflow(
+        TestStartWorkflowWithRetryPolicy,
+        options: { signal_name: 'the question' }
+      )
+
+      expect(connection)
+        .to have_received(:signal_with_start_workflow_execution)
+        .with(hash_including(retry_policy: Temporal::RetryPolicy.new(interval: 5, backoff: 2, max_attempts: 3)))
     end
 
     it 'starts a workflow with a signal and one scalar argument' do
@@ -344,7 +380,16 @@ describe Temporal::Client do
           memo: {},
           search_attributes: {},
           headers: {},
+          retry_policy: nil,
         )
+    end
+
+    it 'sends the retry policy with a cron workflow' do
+      subject.schedule_workflow(TestStartWorkflowWithRetryPolicy, '* * * * *', 42)
+
+      expect(connection)
+        .to have_received(:start_workflow_execution)
+        .with(hash_including(retry_policy: Temporal::RetryPolicy.new(interval: 5, backoff: 2, max_attempts: 3)))
     end
   end
 

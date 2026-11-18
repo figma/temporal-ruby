@@ -19,12 +19,26 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 3.0.3
+          ruby-version: '3.4'
           bundler-cache: true
 
       - name: Run tests
         run: |
           bundle exec rspec
+
+  test_temporalio_coexistence:
+    runs-on: ubuntu-latest
+    env:
+      BUNDLE_GEMFILE: gemfiles/temporalio.gemfile
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Test protobuf coexistence
+        run: bundle exec rspec spec/unit/lib/temporal/protobuf_loading_spec.rb
 
   test_examples:
     runs-on: ubuntu-latest
@@ -44,7 +58,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 3.0.3
+          ruby-version: '3.4'
 
       - name: Bundle install
         run: |
